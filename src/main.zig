@@ -1085,16 +1085,18 @@ const Abuf = std.ArrayList(u8);
 /// This function writes the whole screen using VT100 escape characters
 /// starting from the logical state of the editor in the global state 'E'.
 fn editorRefreshScreen() !void {
-    //     int y;
     //     erow *r;
     //     char buf[32];
     var ab = Abuf.init(allocator);
     defer ab.deinit();
+
     // Hide cursor.
     try ab.appendSlice("\x1b[?25l");
 
-    //     abAppend(&ab, "\x1b[H", 3); // Go home.
+    // Go home.
+    try ab.appendSlice("\x1b[H");
 
+    //     int y;
     //     for (y = 0; y < E.screenrows; y++)
     //     {
     //         int filerow = E.rowoff + y;
@@ -1619,14 +1621,18 @@ pub fn main() anyerror!void {
     allocator = gpa.allocator();
     defer std.debug.assert(!gpa.deinit());
 
-    //     if (argc != 2)
-    //     {
-    //         fprintf(stderr, "Usage: kilo <filename>\n");
-    //         exit(1);
-    //     }
+    var it = std.process.ArgIterator.init();
+    // skip arg0
+    _ = it.next();
 
+    const arg = it.next() orelse {
+        _ = c.fprintf(c.stderr, "Usage: kilo <filename>\n");
+        c.exit(1);
+    };
+
+    _ = arg;
     initEditor();
-    //     editorSelectSyntaxHighlight(argv[1]);
+        // editorSelectSyntaxHighlight(argv[1]);
     //     editorOpen(argv[1]);
     //     enableRawMode(STDIN_FILENO);
     //     editorSetStatusMessage(
@@ -1636,5 +1642,4 @@ pub fn main() anyerror!void {
     //         editorRefreshScreen();
     //         editorProcessKeypress(STDIN_FILENO);
     //     }
-
 }
