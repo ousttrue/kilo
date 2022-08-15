@@ -67,74 +67,72 @@ const c = @import("c");
 // #define HL_HIGHLIGHT_STRINGS (1 << 0)
 // #define HL_HIGHLIGHT_NUMBERS (1 << 1)
 
-// struct editorSyntax
-// {
-//     char **filematch;
-//     char **keywords;
-//     char singleline_comment_start[2];
-//     char multiline_comment_start[3];
-//     char multiline_comment_end[3];
-//     int flags;
-// };
+const EditorSyntax = struct {
+    filematch: **u8,
+    keywords: **u8,
+    singleline_comment_start: [2]u8,
+    multiline_comment_start: [3]u8,
+    multiline_comment_end: [3]u8,
+    flags: i32,
+};
 
 // // This structure represents a single line of the file we are editing.
 
-// typedef struct erow
-// {
-//     int idx; // Row index in the file, zero-based.
-
-//     int size; // Size of the row, excluding the null term.
-
-//     int rsize; // Size of the rendered row.
-
-//     char *chars; // Row content.
-
-//     char *render; // Row content "rendered" for screen (for TABs).
-
-//     unsigned char *hl; // Syntax highlight type for each character in render.
-
-//     int hl_oc; // Row had open comment at end in last syntax highlight
-//     //                           check.
-
-// } erow;
+const Erow = struct {
+    /// Row index in the file, zero-based.
+    idx: i32,
+    /// Size of the row, excluding the null term.
+    size: i32,
+    /// Size of the rendered row.
+    rsize: i32,
+    /// Row content.
+    chars: *u8,
+    /// Row content "rendered" for screen (for TABs).
+    render: *u8,
+    /// Syntax highlight type for each character in render.
+    hl: *u8,
+    /// Row had open comment at end in last syntax highlight check.
+    hl_oc: i32,
+};
 
 // typedef struct hlcolor
 // {
 //     int r, g, b;
 // } hlcolor;
 
-// struct editorConfig
-// {
-//     int cx, cy; // Cursor x and y position in characters
+const EditorConfig = struct {
+    /// Cursor x and y position in characters
+    cx: i32,
+    cy: i32,
+    /// Offset of row displayed.
+    rowoff: i32,
+    /// Offset of column displayed.
+    coloff: i32,
+    /// Number of rows that we can show
+    screenrows: i32,
+    /// Number of cols that we can show
+    screencols: i32,
+    /// Number of rows
+    numrows: i32,
+    /// Is terminal raw mode enabled?
+    rawmode: i32,
+    /// Rows
+    row: ?*Erow,
+    /// File modified but not saved.
+    dirty: i32,
+    /// Currently open filename
+    filename: ?*u8,
+    statusmsg: [80]u8,
+    statusmsg_time: c.time_t,
+    /// Current syntax highlight, or null.
+    syntax: ?*EditorSyntax,
+};
 
-//     int rowoff; // Offset of row displayed.
-
-//     int coloff; // Offset of column displayed.
-
-//     int screenrows; // Number of rows that we can show
-
-//     int screencols; // Number of cols that we can show
-
-//     int numrows; // Number of rows
-
-//     int rawmode; // Is terminal raw mode enabled?
-
-//     erow *row; // Rows
-
-//     int dirty; // File modified but not saved.
-
-//     char *filename; // Currently open filename
-
-//     char statusmsg[80];
-//     time_t statusmsg_time;
-//     struct editorSyntax *syntax; // Current syntax highlight, or NULL.
-// };
-
-// static struct editorConfig E;
+var E: EditorConfig = undefined;
 
 // enum KEY_ACTION
 // {
-//     KEY_NULL = 0, // NULL
+//     KEY_NULL = 0, // null
 
 //     CTRL_C = 3, // Ctrl-c
 
@@ -194,13 +192,13 @@ const c = @import("c");
 
 // // C / C++
 
-// char *C_HL_extensions[] = {".c", ".h", ".cpp", ".hpp", ".cc", NULL};
+// char *C_HL_extensions[] = {".c", ".h", ".cpp", ".hpp", ".cc", null};
 // char *C_HL_keywords[] = {
 //     // C Keywords
 
 //     "auto", "break", "case", "continue", "default", "do", "else", "enum",
 //     "extern", "for", "goto", "if", "register", "return", "sizeof", "static",
-//     "struct", "switch", "typedef", "union", "volatile", "while", "NULL",
+//     "struct", "switch", "typedef", "union", "volatile", "while", "null",
 
 //     // C++ Keywords
 
@@ -215,7 +213,7 @@ const c = @import("c");
 //     // C types
 
 //     "int|", "long|", "double|", "float|", "char|", "unsigned|", "signed|",
-//     "void|", "short|", "auto|", "const|", "bool|", NULL};
+//     "void|", "short|", "auto|", "const|", "bool|", null};
 
 // // Here we define an array of syntax highlights by extensions, keywords,
 // // comments delimiters and flags.
@@ -476,7 +474,7 @@ const c = @import("c");
 
 // int is_separator(int c)
 // {
-//     return c == '\0' || isspace(c) || strchr(",.()+-/*=~%[];", c) != NULL;
+//     return c == '\0' || isspace(c) || strchr(",.()+-/*=~%[];", c) != null;
 // }
 
 // // Return true if the specified row last char is part of a multi line comment
@@ -500,7 +498,7 @@ const c = @import("c");
 //     row->hl = realloc(row->hl, row->rsize);
 //     memset(row->hl, HL_NORMAL, row->rsize);
 
-//     if (E.syntax == NULL)
+//     if (E.syntax == null)
 //         return; // No syntax, everything is HL_NORMAL.
 
 //     int i, prev_sep, in_string, in_comment;
@@ -655,7 +653,7 @@ const c = @import("c");
 //                     break;
 //                 }
 //             }
-//             if (keywords[j] != NULL)
+//             if (keywords[j] != null)
 //             {
 //                 prev_sep = 0;
 //                 continue; // We had a keyword match
@@ -722,7 +720,7 @@ const c = @import("c");
 //         {
 //             char *p;
 //             int patlen = strlen(s->filematch[i]);
-//             if ((p = strstr(filename, s->filematch[i])) != NULL)
+//             if ((p = strstr(filename, s->filematch[i])) != null)
 //             {
 //                 if (s->filematch[i][0] != '.' || p[patlen] == '\0')
 //                 {
@@ -800,9 +798,9 @@ const c = @import("c");
 //     E.row[at].size = len;
 //     E.row[at].chars = malloc(len + 1);
 //     memcpy(E.row[at].chars, s, len + 1);
-//     E.row[at].hl = NULL;
+//     E.row[at].hl = null;
 //     E.row[at].hl_oc = 0;
-//     E.row[at].render = NULL;
+//     E.row[at].render = null;
 //     E.row[at].rsize = 0;
 //     E.row[at].idx = at;
 //     editorUpdateRow(E.row + at);
@@ -844,7 +842,7 @@ const c = @import("c");
 
 // char *editorRowsToString(int *buflen)
 // {
-//     char *buf = NULL, *p;
+//     char *buf = null, *p;
 //     int totlen = 0;
 //     int j;
 
@@ -930,7 +928,7 @@ const c = @import("c");
 // {
 //     int filerow = E.rowoff + E.cy;
 //     int filecol = E.coloff + E.cx;
-//     erow *row = (filerow >= E.numrows) ? NULL : &E.row[filerow];
+//     erow *row = (filerow >= E.numrows) ? null : &E.row[filerow];
 
 //     // If the row where the cursor is currently located does not exist in our
 //     // logical representaion of the file, add enough empty rows as needed.
@@ -956,7 +954,7 @@ const c = @import("c");
 // {
 //     int filerow = E.rowoff + E.cy;
 //     int filecol = E.coloff + E.cx;
-//     erow *row = (filerow >= E.numrows) ? NULL : &E.row[filerow];
+//     erow *row = (filerow >= E.numrows) ? null : &E.row[filerow];
 
 //     if (!row)
 //     {
@@ -1005,7 +1003,7 @@ const c = @import("c");
 // {
 //     int filerow = E.rowoff + E.cy;
 //     int filecol = E.coloff + E.cx;
-//     erow *row = (filerow >= E.numrows) ? NULL : &E.row[filerow];
+//     erow *row = (filerow >= E.numrows) ? null : &E.row[filerow];
 
 //     if (!row || (filecol == 0 && filerow == 0))
 //         return;
@@ -1017,7 +1015,7 @@ const c = @import("c");
 //         filecol = E.row[filerow - 1].size;
 //         editorRowAppendString(&E.row[filerow - 1], row->chars, row->size);
 //         editorDelRow(filerow);
-//         row = NULL;
+//         row = null;
 //         if (E.cy == 0)
 //             E.rowoff--;
 //         else
@@ -1067,7 +1065,7 @@ const c = @import("c");
 //         return 1;
 //     }
 
-//     char *line = NULL;
+//     char *line = null;
 //     size_t linecap = 0;
 //     ssize_t linelen;
 //     while ((linelen = getline(&line, &linecap, fp)) != -1)
@@ -1129,14 +1127,14 @@ const c = @import("c");
 
 // #define ABUF_INIT \
 //     {             \
-//         NULL, 0   \
+//         null, 0   \
 //     }
 
 // void abAppend(struct abuf *ab, const char *s, int len)
 // {
 //     char *new = realloc(ab->b, ab->len + len);
 
-//     if (new == NULL)
+//     if (new == null)
 //         return;
 //     memcpy(new + ab->len, s, len);
 //     ab->b = new;
@@ -1273,7 +1271,7 @@ const c = @import("c");
 
 //     abAppend(&ab, "\x1b[0K", 4);
 //     int msglen = strlen(E.statusmsg);
-//     if (msglen && time(NULL) - E.statusmsg_time < 5)
+//     if (msglen && time(null) - E.statusmsg_time < 5)
 //         abAppend(&ab, E.statusmsg, msglen <= E.screencols ? msglen : E.screencols);
 
 //     // Put cursor at its current position. Note that the horizontal position
@@ -1283,7 +1281,7 @@ const c = @import("c");
 //     int j;
 //     int cx = 1;
 //     int filerow = E.rowoff + E.cy;
-//     erow *row = (filerow >= E.numrows) ? NULL : &E.row[filerow];
+//     erow *row = (filerow >= E.numrows) ? null : &E.row[filerow];
 //     if (row)
 //     {
 //         for (j = E.coloff; j < (E.cx + E.coloff); j++)
@@ -1310,7 +1308,7 @@ const c = @import("c");
 //     va_start(ap, fmt);
 //     vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
 //     va_end(ap);
-//     E.statusmsg_time = time(NULL);
+//     E.statusmsg_time = time(null);
 // }
 
 // // =============================== Find mode ================================
@@ -1327,7 +1325,7 @@ const c = @import("c");
 
 //     int saved_hl_line = -1; // No saved HL
 
-//     char *saved_hl = NULL;
+//     char *saved_hl = null;
 
 // #define FIND_RESTORE_HL                                                            \
 //     do                                                                             \
@@ -1336,7 +1334,7 @@ const c = @import("c");
 //         {                                                                          \
 //             memcpy(E.row[saved_hl_line].hl, saved_hl, E.row[saved_hl_line].rsize); \
 //             free(saved_hl);                                                        \
-//             saved_hl = NULL;                                                       \
+//             saved_hl = null;                                                       \
 //         }                                                                          \
 //     } while (0)
 
@@ -1395,7 +1393,7 @@ const c = @import("c");
 //             find_next = 1;
 //         if (find_next)
 //         {
-//             char *match = NULL;
+//             char *match = null;
 //             int match_offset = 0;
 //             int i, current = last_match;
 
@@ -1456,7 +1454,7 @@ const c = @import("c");
 //     int filerow = E.rowoff + E.cy;
 //     int filecol = E.coloff + E.cx;
 //     int rowlen;
-//     erow *row = (filerow >= E.numrows) ? NULL : &E.row[filerow];
+//     erow *row = (filerow >= E.numrows) ? null : &E.row[filerow];
 
 //     switch (key)
 //     {
@@ -1541,7 +1539,7 @@ const c = @import("c");
 
 //     filerow = E.rowoff + E.cy;
 //     filecol = E.coloff + E.cx;
-//     row = (filerow >= E.numrows) ? NULL : &E.row[filerow];
+//     row = (filerow >= E.numrows) ? null : &E.row[filerow];
 //     rowlen = row ? row->size : 0;
 //     if (filecol > rowlen)
 //     {
@@ -1668,41 +1666,38 @@ const c = @import("c");
 //     editorRefreshScreen();
 // }
 
-// void initEditor(void)
-// {
-//     E.cx = 0;
-//     E.cy = 0;
-//     E.rowoff = 0;
-//     E.coloff = 0;
-//     E.numrows = 0;
-//     E.row = NULL;
-//     E.dirty = 0;
-//     E.filename = NULL;
-//     E.syntax = NULL;
-//     updateWindowSize();
-//     signal(SIGWINCH, handleSigWinCh);
-// }
+fn initEditor() void {
+    E.cx = 0;
+    E.cy = 0;
+    E.rowoff = 0;
+    E.coloff = 0;
+    E.numrows = 0;
+    E.row = null;
+    E.dirty = 0;
+    E.filename = null;
+    E.syntax = null;
+    // updateWindowSize();
+    // signal(SIGWINCH, handleSigWinCh);
+}
 
-// int main(int argc, char **argv)
-// {
-//     if (argc != 2)
-//     {
-//         fprintf(stderr, "Usage: kilo <filename>\n");
-//         exit(1);
-//     }
+pub fn main() anyerror!void {
+    //     if (argc != 2)
+    //     {
+    //         fprintf(stderr, "Usage: kilo <filename>\n");
+    //         exit(1);
+    //     }
 
-//     initEditor();
-//     editorSelectSyntaxHighlight(argv[1]);
-//     editorOpen(argv[1]);
-//     enableRawMode(STDIN_FILENO);
-//     editorSetStatusMessage(
-//         "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find");
-//     while (1)
-//     {
-//         editorRefreshScreen();
-//         editorProcessKeypress(STDIN_FILENO);
-//     }
-//     return 0;
-// }
+    initEditor();
+    //     editorSelectSyntaxHighlight(argv[1]);
+    //     editorOpen(argv[1]);
+    //     enableRawMode(STDIN_FILENO);
+    //     editorSetStatusMessage(
+    //         "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find");
+    //     while (1)
+    //     {
+    //         editorRefreshScreen();
+    //         editorProcessKeypress(STDIN_FILENO);
+    //     }
+    //     return 0;
 
-pub fn main() anyerror!void {}
+}
