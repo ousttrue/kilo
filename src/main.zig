@@ -130,47 +130,32 @@ const EditorConfig = struct {
 
 var E: EditorConfig = undefined;
 
-// enum KEY_ACTION
-// {
-//     KEY_NULL = 0, // null
-
-//     CTRL_C = 3, // Ctrl-c
-
-//     CTRL_D = 4, // Ctrl-d
-
-//     CTRL_F = 6, // Ctrl-f
-
-//     CTRL_H = 8, // Ctrl-h
-
-//     TAB = 9, // Tab
-
-//     CTRL_L = 12, // Ctrl+l
-
-//     ENTER = 13, // Enter
-
-//     CTRL_Q = 17, // Ctrl-q
-
-//     CTRL_S = 19, // Ctrl-s
-
-//     CTRL_U = 21, // Ctrl-u
-
-//     ESC = 27, // Escape
-
-//     BACKSPACE = 127, // Backspace
-
-//     // The following are just soft codes, not really reported by the
-//     // terminal directly.
-
-//     ARROW_LEFT = 1000,
-//     ARROW_RIGHT,
-//     ARROW_UP,
-//     ARROW_DOWN,
-//     DEL_KEY,
-//     HOME_KEY,
-//     END_KEY,
-//     PAGE_UP,
-//     PAGE_DOWN
-// };
+const KEY_ACTION = enum(u32) {
+    KEY_NULL = 0, // null
+    CTRL_C = 3, // Ctrl-c
+    CTRL_D = 4, // Ctrl-d
+    CTRL_F = 6, // Ctrl-f
+    CTRL_H = 8, // Ctrl-h
+    TAB = 9, // Tab
+    CTRL_L = 12, // Ctrl+l
+    ENTER = 13, // Enter
+    CTRL_Q = 17, // Ctrl-q
+    CTRL_S = 19, // Ctrl-s
+    CTRL_U = 21, // Ctrl-u
+    ESC = 27, // Escape
+    BACKSPACE = 127, // Backspace
+    // The following are just soft codes, not really reported by the
+    // terminal directly.
+    ARROW_LEFT = 1000,
+    ARROW_RIGHT,
+    ARROW_UP,
+    ARROW_DOWN,
+    DEL_KEY,
+    HOME_KEY,
+    END_KEY,
+    PAGE_UP,
+    PAGE_DOWN,
+};
 
 // void editorSetStatusMessage(const char *fmt, ...);
 
@@ -386,89 +371,63 @@ var E: EditorConfig = undefined;
 //     }
 // }
 
-// // Use the ESC [6n escape sequence to query the horizontal cursor position
-// // and return it. On error -1 is returned, on success the position of the
-// // cursor is stored at *rows and *cols and 0 is returned.
+/// Use the ESC [6n escape sequence to query the horizontal cursor position
+/// and return it. On error -1 is returned, on success the position of the
+/// cursor is stored at *rows and *cols and 0 is returned.
+fn getCursorPosition(ifd: i32, ofd: i32, rows: *i32, cols: *i32) !void {
 
-// int getCursorPosition(int ifd, int ofd, int *rows, int *cols)
-// {
-//     char buf[32];
-//     unsigned int i = 0;
+    // Report cursor location
+    if (c.write(ofd, "\x1b[6n", 4) != 4)
+        return error.getCursorPosition;
 
-//     // Report cursor location
+    // Read the response: ESC [ rows ; cols R
+    var buf: [32]u8 = undefined;
+    var i: u32 = 0;
+    while (i < @sizeOf(@TypeOf(buf)) - 1) : (i += 1) {
+        if (c.read(ifd, &buf[i], 1) != 1)
+            break;
+        if (buf[i] == 'R')
+            break;
+    }
+    buf[i] = 0;
 
-//     if (write(ofd, "\x1b[6n", 4) != 4)
-//         return -1;
+    // Parse it.
+    if (buf[0] != @enumToInt(KEY_ACTION.ESC) or buf[1] != '[')
+        return error.getCursorPosition;
+    if (c.sscanf(&buf[2], "%d;%d", rows, cols) != 2)
+        return error.getCursorPosition;
+}
 
-//     // Read the response: ESC [ rows ; cols R
+/// Try to get the number of columns in the current terminal. If the ioctl()
+/// call fails the function will try to query the terminal itself.
+/// Returns 0 on success, -1 on error.
+fn getWindowSize(ifd: i32, ofd: i32, rows: *i32, cols: *i32) !void {
+    var ws: c.winsize = undefined;
 
-//     while (i < sizeof(buf) - 1)
-//     {
-//         if (read(ifd, buf + i, 1) != 1)
-//             break;
-//         if (buf[i] == 'R')
-//             break;
-//         i++;
-//     }
-//     buf[i] = '\0';
+    if (c.ioctl(1, c.TIOCGWINSZ, &ws) == -1 or ws.ws_col == 0) {
+        // ioctl() failed. Try to query the terminal itself.
 
-//     // Parse it.
+        var orig_row: i32 = undefined;
+        var orig_col: i32 = undefined;
+        // Get the initial position so we can restore it later.
+        try getCursorPosition(ifd, ofd, &orig_row, &orig_col);
 
-//     if (buf[0] != ESC || buf[1] != '[')
-//         return -1;
-//     if (sscanf(buf + 2, "%d;%d", rows, cols) != 2)
-//         return -1;
-//     return 0;
-// }
+        // Go to right/bottom margin and get position.
+        if (c.write(ofd, "\x1b[999C\x1b[999B", 12) != 12)
+            return error.gotoRightBottom;
+        try getCursorPosition(ifd, ofd, rows, cols);
 
-// // Try to get the number of columns in the current terminal. If the ioctl()
-// // call fails the function will try to query the terminal itself.
-// // Returns 0 on success, -1 on error.
-
-// int getWindowSize(int ifd, int ofd, int *rows, int *cols)
-// {
-//     struct winsize ws;
-
-//     if (ioctl(1, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0)
-//     {
-//         // ioctl() failed. Try to query the terminal itself.
-
-//         int orig_row, orig_col, retval;
-
-//         // Get the initial position so we can restore it later.
-
-//         retval = getCursorPosition(ifd, ofd, &orig_row, &orig_col);
-//         if (retval == -1)
-//             goto failed;
-
-//         // Go to right/bottom margin and get position.
-
-//         if (write(ofd, "\x1b[999C\x1b[999B", 12) != 12)
-//             goto failed;
-//         retval = getCursorPosition(ifd, ofd, rows, cols);
-//         if (retval == -1)
-//             goto failed;
-
-//         // Restore position.
-
-//         char seq[32];
-//         snprintf(seq, 32, "\x1b[%d;%dH", orig_row, orig_col);
-//         if (write(ofd, seq, strlen(seq)) == -1)
-//         {
-//             // Can't recover...
-//         }
-//         return 0;
-//     }
-//     else
-//     {
-//         *cols = ws.ws_col;
-//         *rows = ws.ws_row;
-//         return 0;
-//     }
-
-// failed:
-//     return -1;
-// }
+        // Restore position.
+        var seq: [32]u8 = undefined;
+        _ = c.snprintf(&seq[0], 32, "\x1b[%d;%dH", orig_row, orig_col);
+        if (c.write(ofd, &seq[0], c.strlen(&seq[0])) == -1) {
+            // Can't recover...
+        }
+    } else {
+        cols.* = ws.ws_col;
+        rows.* = ws.ws_row;
+    }
+}
 
 // // ====================== Syntax highlight color scheme  ====================
 
@@ -1645,16 +1604,13 @@ var E: EditorConfig = undefined;
 //     return E.dirty;
 // }
 
-// void updateWindowSize(void)
-// {
-//     if (getWindowSize(STDIN_FILENO, STDOUT_FILENO,
-//                       &E.screenrows, &E.screencols) == -1)
-//     {
-//         perror("Unable to query the screen for size (columns / rows)");
-//         exit(1);
-//     }
-//     E.screenrows -= 2; // Get room for status bar.
-// }
+fn updateWindowSize() void {
+    getWindowSize(c.STDIN_FILENO, c.STDOUT_FILENO, &E.screenrows, &E.screencols) catch {
+        c.perror("Unable to query the screen for size (columns / rows)");
+        c.exit(1);
+    };
+    E.screenrows -= 2; // Get room for status bar.
+}
 
 // void handleSigWinCh(int unused __attribute__((unused)))
 // {
@@ -1676,7 +1632,7 @@ fn initEditor() void {
     E.dirty = 0;
     E.filename = null;
     E.syntax = null;
-    // updateWindowSize();
+    updateWindowSize();
     // signal(SIGWINCH, handleSigWinCh);
 }
 
