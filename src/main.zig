@@ -1612,15 +1612,14 @@ fn updateWindowSize() void {
     E.screenrows -= 2; // Get room for status bar.
 }
 
-// void handleSigWinCh(int unused __attribute__((unused)))
-// {
-//     updateWindowSize();
-//     if (E.cy > E.screenrows)
-//         E.cy = E.screenrows - 1;
-//     if (E.cx > E.screencols)
-//         E.cx = E.screencols - 1;
-//     editorRefreshScreen();
-// }
+fn handleSigWinCh(_: c_int) callconv(.C) void {
+    updateWindowSize();
+    if (E.cy > E.screenrows)
+        E.cy = E.screenrows - 1;
+    if (E.cx > E.screencols)
+        E.cx = E.screencols - 1;
+    // editorRefreshScreen();
+}
 
 fn initEditor() void {
     E.cx = 0;
@@ -1633,7 +1632,7 @@ fn initEditor() void {
     E.filename = null;
     E.syntax = null;
     updateWindowSize();
-    // signal(SIGWINCH, handleSigWinCh);
+    _ = c.signal(c.SIGWINCH, handleSigWinCh);
 }
 
 pub fn main() anyerror!void {
@@ -1654,6 +1653,5 @@ pub fn main() anyerror!void {
     //         editorRefreshScreen();
     //         editorProcessKeypress(STDIN_FILENO);
     //     }
-    //     return 0;
 
 }
