@@ -88,8 +88,8 @@ const EditorConfig = struct {
     const Self = @This();
 
     /// Cursor x and y position in characters
-    cx: i32 = 0,
-    cy: i32 = 0,
+    cx: u32 = 0,
+    cy: u32 = 0,
     /// Offset of row displayed.
     rowoff: u32 = 0,
     /// Offset of column displayed.
@@ -130,7 +130,7 @@ const EditorConfig = struct {
 
 var E: EditorConfig = undefined;
 
-const KEY_ACTION = enum(i32) {
+const KEY_ACTION = enum(c_int) {
     KEY_NULL = 0, // null
     CTRL_C = 3, // Ctrl-c
     CTRL_D = 4, // Ctrl-d
@@ -155,6 +155,7 @@ const KEY_ACTION = enum(i32) {
     END_KEY,
     PAGE_UP,
     PAGE_DOWN,
+    _,
 };
 
 // =========================== Syntax highlights DB =========================
@@ -1126,7 +1127,7 @@ fn editorRefreshScreen() void {
     var rstatus: [80]u8 = undefined;
     const modified: [:0]const u8 = if (E.dirty) "(modified)" else "";
     var len = @intCast(u32, @call(.{}, c.snprintf, .{ &status, status.len, "%.20s - %d lines %s", E.filename, E.row.items.len, &modified[0] }));
-    const rlen = @intCast(u32, @call(.{}, c.snprintf, .{ &rstatus, rstatus.len, "%d/%d", @intCast(i32, E.rowoff) + E.cy + 1, E.row.items.len }));
+    const rlen = @intCast(u32, @call(.{}, c.snprintf, .{ &rstatus, rstatus.len, "%d/%d", E.rowoff + E.cy + 1, E.row.items.len }));
     if (len > E.screencols)
         len = E.screencols;
     ab.appendSlice(status[0..len]) catch unreachable;
@@ -1433,76 +1434,63 @@ fn editorProcessKeypress(fd: i32) void {
 
     const ch = editorReadKey(fd);
     switch (ch) {
-        // Enter
-        KEY_ACTION.ENTER => {
+        .ENTER => {
             editorInsertNewline();
         },
-        // Ctrl-c
-        KEY_ACTION.CTRL_C => {
+        .CTRL_C => {
             // We ignore ctrl-c, it can't be so simple to lose the changes
             // to the edited file.
             running = false;
         },
-        //     case CTRL_Q: // Ctrl-q
-
-        //         // Quit if the file was already saved.
-
-        //         if (E.dirty && quit_times)
-        //         {
-        //             editorSetStatusMessage("WARNING!!! File has unsaved changes. "
-        //                                    "Press Ctrl-Q %d more times to quit.",
-        //                                    quit_times);
-        //             quit_times--;
-        //             return;
-        //         }
-        //         exit(0);
-        //         break;
-        //     case CTRL_S: // Ctrl-s
-
-        //         editorSave();
-        //         break;
-        //     case CTRL_F:
-        //         editorFind(fd);
-        //         break;
-        //     case BACKSPACE: // Backspace
-
-        //     case CTRL_H: // Ctrl-h
-
-        //     case DEL_KEY:
-        //         editorDelChar();
-        //         break;
-        //     case PAGE_UP:
-        //     case PAGE_DOWN:
-        //         if (c == PAGE_UP && E.cy != 0)
-        //             E.cy = 0;
-        //         else if (c == PAGE_DOWN && E.cy != E.screenrows - 1)
-        //             E.cy = E.screenrows - 1;
-        //         {
-        //             int times = E.screenrows;
-        //             while (times--)
-        //                 editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
-        //         }
-        //         break;
-
-        //     case ARROW_UP:
-        //     case ARROW_DOWN:
-        //     case ARROW_LEFT:
-        //     case ARROW_RIGHT:
-        //         editorMoveCursor(c);
-        //         break;
-        //     case CTRL_L: // ctrl+l, clear screen
-
-        //         // Just refresht the line as side effect.
-
-        //         break;
-        //     case ESC:
-        //         // Nothing to do for ESC in this mode.
-
-        //         break;
-        //     default:
-        //         editorInsertChar(c);
-        //         break;
-        else => unreachable,
+        .CTRL_Q => {
+            // Quit if the file was already saved.
+            if (E.dirty and S.quit_times != 0) {
+                editorSetStatusMessage(
+                    "WARNING!!! File has unsaved changes. " ++ "Press Ctrl-Q %d more times to quit.",
+                    .{S.quit_times},
+                );
+                S.quit_times -= 1;
+                return;
+            }
+            running = false;
+        },
+        .CTRL_S => {
+            // editorSave();
+        },
+        .CTRL_F => {
+            // editorFind(fd);
+        },
+        .BACKSPACE, .CTRL_H, .DEL_KEY => {
+            // editorDelChar();
+        },
+        .PAGE_UP, .PAGE_DOWN => {
+            if (ch == .PAGE_UP and E.cy != 0) {
+                E.cy = 0;
+            } else if (ch == .PAGE_DOWN and E.cy != E.screenrows - 1) {
+                E.cy = E.screenrows - 1;
+            }
+            var times = E.screenrows;
+            while (times > 0) : (times -= 1) {
+                // editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+            }
+        },
+        .ARROW_UP,
+        .ARROW_DOWN,
+        .ARROW_LEFT,
+        .ARROW_RIGHT,
+        => {
+            //         editorMoveCursor(c);
+        },
+        .CTRL_L => {
+            // ctrl+l, clear screen
+            // Just refresht the line as side effect.
+        },
+        .ESC => {
+            // Nothing to do for ESC in this mode.
+        },
+        else => {
+            //         editorInsertChar(c);
+        },
     }
 
     S.quit_times = KILO_QUIT_TIMES; // Reset it to the original value.
@@ -1524,9 +1512,9 @@ fn updateWindowSize() void {
 fn handleSigWinCh(_: c_int) callconv(.C) void {
     updateWindowSize();
     if (E.cy > E.screenrows)
-        E.cy = @intCast(i32, E.screenrows) - 1;
+        E.cy = E.screenrows - 1;
     if (E.cx > E.screencols)
-        E.cx = @intCast(i32, E.screencols) - 1;
+        E.cx = E.screencols - 1;
     editorRefreshScreen();
 }
 
