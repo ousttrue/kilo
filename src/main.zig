@@ -67,10 +67,6 @@ const Erow = struct {
 
     /// Row index in the file, zero-based.
     idx: u32,
-    /// Size of the row, excluding the null term.
-    size: u32,
-    /// Size of the rendered row.
-    rsize: u32 = 0,
     /// Row content.
     chars: []const u8,
     /// Row content "rendered" for screen (for TABs).
@@ -81,30 +77,18 @@ const Erow = struct {
     hl_oc: i32 = 0,
 
     fn init(a: std.mem.Allocator, idx: usize, chars: []const u8) Self {
-        // E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
-        // if (at != E.numrows)
-        // {
-        //     memmove(E.row + at + 1, E.row + at, sizeof(E.row[0]) * (E.numrows - at));
-        //     for (int j = at + 1; j <= E.numrows; j++)
-        //         E.row[j].idx++;
-        // }
-        // E.row[at].size = len;
-        // E.row[at].chars = malloc(len + 1);
-        // memcpy(E.row[at].chars, s, len + 1);
-
         return Self{
             .chars = a.dupe(u8, chars) catch unreachable,
-            .size = @intCast(u32, chars.len),
             .idx = @intCast(u32, idx),
         };
     }
 
     fn draw(self: Self, ab: *std.ArrayList(u8), coloff: u32, screencols: u32) void {
-        if (self.rsize <= coloff) {
+        if (self.chars.len <= coloff) {
             return;
         }
-        var len: u32 = self.rsize - coloff;
-        var current_color: i32 = -1;
+        var len = self.chars.len - coloff;
+        var current_color: ?i32 = null;
 
         if (len > screencols) {
             len = screencols;
@@ -123,14 +107,14 @@ const Erow = struct {
                 ab.append(sym) catch unreachable;
                 ab.appendSlice("\x1b[0m") catch unreachable;
             } else if (hl[j] == HL_NORMAL) {
-                if (current_color != -1) {
+                if (current_color) |_| {
                     ab.appendSlice("\x1b[39m") catch unreachable;
-                    current_color = -1;
+                    current_color = null;
                 }
                 ab.append(p[j]) catch unreachable;
             } else {
                 const color = editorSyntaxToColor(hl[j]);
-                if (color != current_color) {
+                if (current_color == null or color != current_color.?) {
                     var buf: [16]u8 = undefined;
                     const clen = @intCast(u32, c.snprintf(&buf[0], buf.len, "\x1b[%dm", color));
                     current_color = color;
@@ -182,6 +166,9 @@ const EditorConfig = struct {
 
     fn deinit(self: Self) void {
         self.row.deinit();
+        if (self.filename) |filename| {
+            allocator.free(filename);
+        }
     }
 
     fn rows(self: Self) []const Erow {
@@ -202,9 +189,9 @@ const EditorConfig = struct {
         const filerow = self.rowoff + self.cy;
         const filecol = self.coloff + self.cx;
         const row = self.getRow(filerow);
-        const rowlen = if (row) |r| r.size else 0;
+        const rowlen = if (row) |r| r.chars.len else 0;
         if (filecol > rowlen) {
-            self.cx -= filecol - rowlen;
+            self.cx -= @intCast(u32, filecol - rowlen);
             if (self.cx < 0) {
                 self.coloff += self.cx;
                 self.cx = 0;
@@ -235,6 +222,7 @@ const EditorConfig = struct {
         self.dirty = false;
         const filename = try allocator.dupeZ(u8, path);
         const fp = c.fopen(&filename[0], "r");
+        self.filename = filename;
         if (fp == null) {
             // if (c.errno != c.ENOENT) {
             //     c.perror("Opening file");
@@ -1359,9 +1347,9 @@ fn editorMoveCursor(key: KEY_ACTION) void {
                 if (E.coloff > 0) {
                     E.coloff -= 1;
                 } else {
-                    if (filerow > 0) {
+                    if (row) |r| {
                         E.cy -= 1;
-                        E.cx = E.row.items[filerow - 1].size;
+                        E.cx = @intCast(u32, r.chars.len);
                         if (E.cx > E.screencols - 1) {
                             E.coloff = E.cx - E.screencols + 1;
                             E.cx = E.screencols - 1;
@@ -1374,13 +1362,13 @@ fn editorMoveCursor(key: KEY_ACTION) void {
         },
         .ARROW_RIGHT => {
             if (row) |r| {
-                if (filecol < r.size) {
+                if (filecol < r.chars.len) {
                     if (E.cx == E.screencols - 1) {
                         E.coloff += 1;
                     } else {
                         E.cx += 1;
                     }
-                } else if (filecol == r.size) {
+                } else if (filecol == r.chars.len) {
                     E.cx = 0;
                     E.coloff = 0;
                     if (E.cy == E.screenrows - 1) {
