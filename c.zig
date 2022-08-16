@@ -6,4 +6,5 @@ pub usingnamespace @cImport({
     @cInclude("string.h"); // strlen
     @cInclude("stdlib.h"); // exit
     @cInclude("signal.h");
+    @cInclude("termios.h");
 });

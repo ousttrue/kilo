@@ -117,7 +117,7 @@ const EditorConfig = struct {
     /// Number of rows
     numrows: i32 = 0,
     /// Is terminal raw mode enabled?
-    rawmode: i32,
+    rawmode: bool = false,
     /// Rows
     row: ?*Erow = null,
     /// File modified but not saved.
@@ -216,76 +216,69 @@ const HLDB = [_]EditorSyntax{
 
 // #define HLDB_ENTRIES (sizeof(HLDB) / sizeof(HLDB[0]))
 
-// // ======================= Low level terminal handling ======================
+// ======================= Low level terminal handling ======================
 
-// static struct termios orig_termios; // In order to restore at exit.
+var orig_termios: c.termios = undefined;
+/// In order to restore at exit.
+fn disableRawMode(fd: i32) void {
+    // Don't even check the return value as it's too late.
+    if (E.rawmode) {
+        _ = c.tcsetattr(fd, c.TCSAFLUSH, &orig_termios);
+        E.rawmode = false;
+    }
+}
 
-// void disableRawMode(int fd)
-// {
-//     // Don't even check the return value as it's too late.
+/// Called at exit to avoid remaining in raw mode.
+fn editorAtExit() callconv(.C) void {
+    disableRawMode(c.STDIN_FILENO);
+}
 
-//     if (E.rawmode)
-//     {
-//         tcsetattr(fd, TCSAFLUSH, &orig_termios);
-//         E.rawmode = 0;
-//     }
-// }
+/// Raw mode: 1960 magic shit.
+fn enableRawMode(fd: i32) !void {
+    if (E.rawmode)
+        return; // Already enabled.
 
-// // Called at exit to avoid remaining in raw mode.
+    if (c.isatty(c.STDIN_FILENO) == 0) {
+        // c.errno = c.ENOTTY;
+        return error.isatty;
+    }
+    _ = c.atexit(editorAtExit);
+    if (c.tcgetattr(fd, &orig_termios) == -1) {
+        // c.errno = c.ENOTTY;
+        return error.isatty;
+    }
 
-// void editorAtExit(void)
-// {
-//     disableRawMode(STDIN_FILENO);
-// }
+    // modify the original mode
+    var raw = orig_termios;
 
-// // Raw mode: 1960 magic shit.
+    // input modes: no break, no CR to NL, no parity check, no strip char,
+    // no start/stop output control.
 
-// int enableRawMode(int fd)
-// {
-//     struct termios raw;
+    raw.c_iflag &= @bitCast(c_uint, ~(c.BRKINT | c.ICRNL | c.INPCK | c.ISTRIP | c.IXON));
+    // output modes - disable post processing
 
-//     if (E.rawmode)
-//         return 0; // Already enabled.
+    raw.c_oflag &= @bitCast(c_uint, ~(c.OPOST));
+    // control modes - set 8 bit chars
 
-//     if (!isatty(STDIN_FILENO))
-//         goto fatal;
-//     atexit(editorAtExit);
-//     if (tcgetattr(fd, &orig_termios) == -1)
-//         goto fatal;
+    raw.c_cflag |= (c.CS8);
+    // local modes - choing off, canonical off, no extended functions,
+    // no signal chars (^Z,^C)
 
-//     raw = orig_termios; // modify the original mode
+    raw.c_lflag &= @bitCast(c_uint, ~(c.ECHO | c.ICANON | c.IEXTEN | c.ISIG));
+    // control chars - set return condition: min number of bytes and timer.
 
-//     // input modes: no break, no CR to NL, no parity check, no strip char,
-//     // no start/stop output control.
+    raw.c_cc[c.VMIN] = 0; // Return each byte, or zero for timeout.
 
-//     raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
-//     // output modes - disable post processing
+    raw.c_cc[c.VTIME] = 1; // 100 ms timeout (unit is tens of second).
 
-//     raw.c_oflag &= ~(OPOST);
-//     // control modes - set 8 bit chars
+    // put terminal in raw mode after flushing
 
-//     raw.c_cflag |= (CS8);
-//     // local modes - choing off, canonical off, no extended functions,
-//     // no signal chars (^Z,^C)
-
-//     raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
-//     // control chars - set return condition: min number of bytes and timer.
-
-//     raw.c_cc[VMIN] = 0; // Return each byte, or zero for timeout.
-
-//     raw.c_cc[VTIME] = 1; // 100 ms timeout (unit is tens of second).
-
-//     // put terminal in raw mode after flushing
-
-//     if (tcsetattr(fd, TCSAFLUSH, &raw) < 0)
-//         goto fatal;
-//     E.rawmode = 1;
-//     return 0;
-
-// fatal:
-//     errno = ENOTTY;
-//     return -1;
-// }
+    if (c.tcsetattr(fd, c.TCSAFLUSH, &raw) < 0) {
+        // c.errno = c.ENOTTY;
+        return error.isatty;
+    }
+    E.rawmode = true;
+}
 
 // // Read a key from the terminal put in raw mode, trying to handle
 // // escape sequences.
@@ -1609,7 +1602,7 @@ pub fn main() anyerror!void {
     _ = c.signal(c.SIGWINCH, handleSigWinCh);
     editorSelectSyntaxHighlight(arg);
     //     editorOpen(argv[1]);
-    //     enableRawMode(STDIN_FILENO);
+    try enableRawMode(c.STDIN_FILENO);
     //     editorSetStatusMessage(
     //         "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find");
     //     while (1)
