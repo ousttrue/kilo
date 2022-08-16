@@ -72,7 +72,7 @@ const Erow = struct {
     /// Row content "rendered" for screen (for TABs).
     render: []const u8,
     /// Syntax highlight type for each character in render.
-    hl: [] u8,
+    hl: []u8,
     /// Row had open comment at end in last syntax highlight check.
     hl_oc: i32 = 0,
 
@@ -395,8 +395,7 @@ const EditorConfig = struct {
     }
 
     fn deinit(self: Self) void {
-        for(self.row.items)|*item|
-        {
+        for (self.row.items) |*item| {
             item.deinit();
         }
         self.row.deinit();
@@ -416,6 +415,11 @@ const EditorConfig = struct {
             self.row.items[row]
         else
             null;
+    }
+
+    fn getCursorRow(self: Self) ?Erow {
+        const filerow = self.rowoff + self.cy;
+        return self.getRow(filerow);
     }
 
     /// Fix cx if the current line has not enough chars.
@@ -438,7 +442,7 @@ const EditorConfig = struct {
     fn editorInsertRow(self: *Self, at: usize, s: []const u8) void {
         if (at > self.row.items.len)
             return;
-        self.row.insert(at, Erow.init(allocator, at, s)) catch unreachable;        
+        self.row.insert(at, Erow.init(allocator, at, s)) catch unreachable;
         if (self.syntax) |syntax| {
             self.row.items[at].updateSyntax(syntax);
         } else {
@@ -1089,8 +1093,6 @@ const Abuf = std.ArrayList(u8);
 /// This function writes the whole screen using VT100 escape characters
 /// starting from the logical state of the editor in the global state 'E'.
 fn editorRefreshScreen() void {
-    //     erow *r;
-    //     char buf[32];
     var ab = Abuf.init(allocator);
     defer {
         _ = c.write(c.STDOUT_FILENO, &ab.items[0], ab.items.len);
@@ -1168,22 +1170,19 @@ fn editorRefreshScreen() void {
     // at which the cursor is displayed may be different compared to 'E.cx'
     // because of TABs.
 
-    //     int j;
-    //     int cx = 1;
-    //     int filerow = E.rowoff + E.cy;
-    //     erow *row = (filerow >= E.numrows) ? null : &E.row[filerow];
-    //     if (row)
-    //     {
-    //         for (j = E.coloff; j < (E.cx + E.coloff); j++)
-    //         {
-    //             if (j < row.size && row.chars[j] == TAB)
-    //                 cx += 7 - ((cx) % 8);
-    //             cx++;
-    //         }
-    //     }
-    //     snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, cx);
-    //     ab.append(buf, strlen(buf));
+    var cx: u32 = 1;
+    if (E.getCursorRow()) |row| {
+        var j = E.coloff;
+        while (j < (E.cx + E.coloff)) : (j += 1) {
+            if (j < row.chars.len and row.chars[j] == @enumToInt(KEY_ACTION.TAB))
+                cx += 7 - ((cx) % 8);
+            cx += 1;
+        }
+    }
 
+    var buf: [32]u8 = undefined;
+    _ = c.snprintf(&buf[0], buf.len, "\x1b[%d;%dH", E.cy + 1, cx);
+    ab.appendSlice(buf[0..c.strlen(&buf[0])]) catch unreachable;
 }
 
 /// Set an editor status message for the second line of the status, at the
