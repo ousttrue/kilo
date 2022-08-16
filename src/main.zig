@@ -192,6 +192,36 @@ const EditorConfig = struct {
             }
         }
     }
+
+    /// Insert a row at the specified position, shifting the other rows on the bottom
+    /// if required.
+    fn editorInsertRow(self: *Self, at: i32, s:[]const u8)void
+    {
+        if (at > E.numrows)
+            return;
+        self.row.insert(at, Erow{
+            .chars = s,
+        });
+        // E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
+        // if (at != E.numrows)
+        // {
+        //     memmove(E.row + at + 1, E.row + at, sizeof(E.row[0]) * (E.numrows - at));
+        //     for (int j = at + 1; j <= E.numrows; j++)
+        //         E.row[j].idx++;
+        // }
+        // E.row[at].size = len;
+        // E.row[at].chars = malloc(len + 1);
+        // memcpy(E.row[at].chars, s, len + 1);
+        // E.row[at].hl = null;
+        // E.row[at].hl_oc = 0;
+        // E.row[at].render = null;
+        // E.row[at].rsize = 0;
+        // E.row[at].idx = at;
+        // editorUpdateRow(E.row + at);
+        // E.numrows+=1;
+        // E.dirty+=1;
+    }
+
 };
 
 var E: EditorConfig = undefined;
@@ -763,32 +793,6 @@ fn editorSelectSyntaxHighlight(filename: []const u8) void {
 //     editorUpdateSyntax(row);
 // }
 
-// // Insert a row at the specified position, shifting the other rows on the bottom
-// // if required.
-
-// void editorInsertRow(int at, char *s, size_t len)
-// {
-//     if (at > E.numrows)
-//         return;
-//     E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
-//     if (at != E.numrows)
-//     {
-//         memmove(E.row + at + 1, E.row + at, sizeof(E.row[0]) * (E.numrows - at));
-//         for (int j = at + 1; j <= E.numrows; j++)
-//             E.row[j].idx++;
-//     }
-//     E.row[at].size = len;
-//     E.row[at].chars = malloc(len + 1);
-//     memcpy(E.row[at].chars, s, len + 1);
-//     E.row[at].hl = null;
-//     E.row[at].hl_oc = 0;
-//     E.row[at].render = null;
-//     E.row[at].rsize = 0;
-//     E.row[at].idx = at;
-//     editorUpdateRow(E.row + at);
-//     E.numrows++;
-//     E.dirty++;
-// }
 
 // // Free row's heap allocated stuff.
 
