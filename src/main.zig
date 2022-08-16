@@ -70,17 +70,249 @@ const Erow = struct {
     /// Row content.
     chars: []const u8,
     /// Row content "rendered" for screen (for TABs).
-    render: ?[]const u8 = null,
+    render: []const u8,
     /// Syntax highlight type for each character in render.
-    hl: ?[]const u8 = null,
+    hl: []const u8,
     /// Row had open comment at end in last syntax highlight check.
     hl_oc: i32 = 0,
 
-    fn init(a: std.mem.Allocator, idx: usize, chars: []const u8) Self {
-        return Self{
-            .chars = a.dupe(u8, chars) catch unreachable,
+    fn init(a: std.mem.Allocator, idx: usize, chars: []const u8, syntax: ?*const EditorSyntax) Self {
+        var self = Self{
             .idx = @intCast(u32, idx),
+            .chars = a.dupe(u8, chars) catch unreachable,
+            .render = allocRender(allocator, chars) catch unreachable,
+            .hl = undefined,
         };
+        self.hl = try allocSyntax(allocator, self.render, syntax);
+        return self;
+    }
+
+    /// Free row's heap allocated stuff.
+    fn editorFreeRow(self: Self) void {
+        allocator.free(self.render);
+        allocator.free(self.chars);
+        allocator.free(self.hl);
+    }
+
+    /// Update the rendered version and the syntax highlight of a row.
+    fn allocRender(a: std.mem.Allocator, chars: []const u8) ![]const u8 {
+        // Create a version of the row we can directly print on the screen,
+        // respecting tabs, substituting non printable characters with '?'.
+
+        var tabs: u32 = 0;
+        for (chars) |ch| {
+            if (ch == @enumToInt(KEY_ACTION.TAB))
+                tabs += 1;
+        }
+
+        const allocsize = chars.len + tabs * 8;
+        if (allocsize > std.math.maxInt(c_uint)) {
+            @panic("Some line of the edited file is too long for kilo\n");
+        }
+
+        var render = try a.allocSentinel(u8, allocsize, 0);
+        var idx: u32 = 0;
+        for (chars) |ch| {
+            if (ch == @enumToInt(KEY_ACTION.TAB)) {
+                render[idx] = ' ';
+                idx += 1;
+                while ((idx + 1) % 8 != 0) {
+                    render[idx] = ' ';
+                    idx += 1;
+                }
+            } else {
+                render[idx] = ch;
+                idx += 1;
+            }
+        }
+
+        return render;
+    }
+
+    /// Set every byte of row.hl (that corresponds to every character in the line)
+    /// to the right syntax highlight type (HL_* defines).
+    fn allocSyntax(a: std.mem.Allocator, render: []const u8, syntax: ?*const EditorSyntax) ![]const u8 {
+        _ = a;
+        _ = render;
+        _ = syntax;
+        unreachable;
+        // if (E.syntax == null)
+        //     return; // No syntax, everything is HL_NORMAL.
+
+        // int i, prev_sep, in_string, in_comment;
+        // char *p;
+        // char **keywords = E.syntax.keywords;
+        // char *scs = E.syntax.singleline_comment_start;
+        // char *mcs = E.syntax.multiline_comment_start;
+        // char *mce = E.syntax.multiline_comment_end;
+
+        // // Point to the first non-space char.
+
+        // p = row.render;
+        // i = 0; // Current char offset
+
+        // while (*p && isspace(*p))
+        // {
+        //     p++;
+        //     i++;
+        // }
+        // prev_sep = 1; // Tell the parser if 'i' points to start of word.
+
+        // in_string = 0; // Are we inside "" or '' ?
+
+        // in_comment = 0; // Are we inside multi-line comment?
+
+        // // If the previous line has an open comment, this line starts
+        // // with an open comment state.
+
+        // if (row.idx > 0 && editorRowHasOpenComment(&E.row[row.idx - 1]))
+        //     in_comment = 1;
+
+        // while (*p)
+        // {
+        //     // Handle // comments.
+
+        //     if (prev_sep && *p == scs[0] && *(p + 1) == scs[1])
+        //     {
+        //         // From here to end is a comment
+
+        //         memset(row.hl + i, HL_COMMENT, row.size - i);
+        //         return;
+        //     }
+
+        //     // Handle multi line comments.
+
+        //     if (in_comment)
+        //     {
+        //         row.hl[i] = HL_MLCOMMENT;
+        //         if (*p == mce[0] && *(p + 1) == mce[1])
+        //         {
+        //             row.hl[i + 1] = HL_MLCOMMENT;
+        //             p += 2;
+        //             i += 2;
+        //             in_comment = 0;
+        //             prev_sep = 1;
+        //             continue;
+        //         }
+        //         else
+        //         {
+        //             prev_sep = 0;
+        //             p++;
+        //             i++;
+        //             continue;
+        //         }
+        //     }
+        //     else if (*p == mcs[0] && *(p + 1) == mcs[1])
+        //     {
+        //         row.hl[i] = HL_MLCOMMENT;
+        //         row.hl[i + 1] = HL_MLCOMMENT;
+        //         p += 2;
+        //         i += 2;
+        //         in_comment = 1;
+        //         prev_sep = 0;
+        //         continue;
+        //     }
+
+        //     // Handle "" and ''
+
+        //     if (in_string)
+        //     {
+        //         row.hl[i] = HL_STRING;
+        //         if (*p == '\\')
+        //         {
+        //             row.hl[i + 1] = HL_STRING;
+        //             p += 2;
+        //             i += 2;
+        //             prev_sep = 0;
+        //             continue;
+        //         }
+        //         if (*p == in_string)
+        //             in_string = 0;
+        //         p++;
+        //         i++;
+        //         continue;
+        //     }
+        //     else
+        //     {
+        //         if (*p == '"' || *p == '\'')
+        //         {
+        //             in_string = *p;
+        //             row.hl[i] = HL_STRING;
+        //             p++;
+        //             i++;
+        //             prev_sep = 0;
+        //             continue;
+        //         }
+        //     }
+
+        //     // Handle non printable chars.
+
+        //     if (!isprint(*p))
+        //     {
+        //         row.hl[i] = HL_NONPRINT;
+        //         p++;
+        //         i++;
+        //         prev_sep = 0;
+        //         continue;
+        //     }
+
+        //     // Handle numbers
+
+        //     if ((isdigit(*p) && (prev_sep || row.hl[i - 1] == HL_NUMBER)) ||
+        //         (*p == '.' && i > 0 && row.hl[i - 1] == HL_NUMBER))
+        //     {
+        //         row.hl[i] = HL_NUMBER;
+        //         p++;
+        //         i++;
+        //         prev_sep = 0;
+        //         continue;
+        //     }
+
+        //     // Handle keywords and lib calls
+
+        //     if (prev_sep)
+        //     {
+        //         int j;
+        //         for (j = 0; keywords[j]; j++)
+        //         {
+        //             int klen = strlen(keywords[j]);
+        //             int kw2 = keywords[j][klen - 1] == '|';
+        //             if (kw2)
+        //                 klen--;
+
+        //             if (!memcmp(p, keywords[j], klen) &&
+        //                 is_separator(*(p + klen)))
+        //             {
+        //                 // Keyword
+
+        //                 memset(row.hl + i, kw2 ? HL_KEYWORD2 : HL_KEYWORD1, klen);
+        //                 p += klen;
+        //                 i += klen;
+        //                 break;
+        //             }
+        //         }
+        //         if (keywords[j] != null)
+        //         {
+        //             prev_sep = 0;
+        //             continue; // We had a keyword match
+        //         }
+        //     }
+
+        //     // Not special chars
+
+        //     prev_sep = is_separator(*p);
+        //     p++;
+        //     i++;
+        // }
+
+        // // Propagate syntax change to the next row if the open commen
+        // // state changed. This may recursively affect all the following rows
+        // // in the file.
+
+        // int oc = editorRowHasOpenComment(row);
+        // if (row.hl_oc != oc && row.idx + 1 < E.numrows)
+        //     editorUpdateSyntax(&E.row[row.idx + 1]);
+        // row.hl_oc = oc;
     }
 
     fn draw(self: Self, ab: *std.ArrayList(u8), coloff: u32, screencols: u32) void {
@@ -93,8 +325,8 @@ const Erow = struct {
         if (len > screencols) {
             len = screencols;
         }
-        var p = self.render.?[coloff..];
-        var hl = self.hl.?[coloff..];
+        var p = self.render[coloff..];
+        var hl = self.hl[coloff..];
         var j: u32 = 0;
         while (j < len) : (j += 1) {
             if (hl[j] == HL_NONPRINT) {
@@ -204,9 +436,8 @@ const EditorConfig = struct {
     fn editorInsertRow(self: *Self, at: usize, s: []const u8) void {
         if (at > self.row.items.len)
             return;
-        self.row.insert(at, Erow.init(allocator, at, s)) catch unreachable;
+        self.row.insert(at, Erow.init(allocator, at, s, self.syntax)) catch unreachable;
         self.dirty = true;
-        // editorUpdateRow(E.row + at);
     }
 
     fn editorAppendRow(self: *Self, line: []const u8) void {
@@ -543,193 +774,6 @@ fn getWindowSize(ifd: i32, ofd: i32, rows: *u32, cols: *u32) !void {
 //     return 0;
 // }
 
-// // Set every byte of row.hl (that corresponds to every character in the line)
-// // to the right syntax highlight type (HL_* defines).
-
-// void editorUpdateSyntax(erow *row)
-// {
-//     row.hl = realloc(row.hl, row.rsize);
-//     memset(row.hl, HL_NORMAL, row.rsize);
-
-//     if (E.syntax == null)
-//         return; // No syntax, everything is HL_NORMAL.
-
-//     int i, prev_sep, in_string, in_comment;
-//     char *p;
-//     char **keywords = E.syntax.keywords;
-//     char *scs = E.syntax.singleline_comment_start;
-//     char *mcs = E.syntax.multiline_comment_start;
-//     char *mce = E.syntax.multiline_comment_end;
-
-//     // Point to the first non-space char.
-
-//     p = row.render;
-//     i = 0; // Current char offset
-
-//     while (*p && isspace(*p))
-//     {
-//         p++;
-//         i++;
-//     }
-//     prev_sep = 1; // Tell the parser if 'i' points to start of word.
-
-//     in_string = 0; // Are we inside "" or '' ?
-
-//     in_comment = 0; // Are we inside multi-line comment?
-
-//     // If the previous line has an open comment, this line starts
-//     // with an open comment state.
-
-//     if (row.idx > 0 && editorRowHasOpenComment(&E.row[row.idx - 1]))
-//         in_comment = 1;
-
-//     while (*p)
-//     {
-//         // Handle // comments.
-
-//         if (prev_sep && *p == scs[0] && *(p + 1) == scs[1])
-//         {
-//             // From here to end is a comment
-
-//             memset(row.hl + i, HL_COMMENT, row.size - i);
-//             return;
-//         }
-
-//         // Handle multi line comments.
-
-//         if (in_comment)
-//         {
-//             row.hl[i] = HL_MLCOMMENT;
-//             if (*p == mce[0] && *(p + 1) == mce[1])
-//             {
-//                 row.hl[i + 1] = HL_MLCOMMENT;
-//                 p += 2;
-//                 i += 2;
-//                 in_comment = 0;
-//                 prev_sep = 1;
-//                 continue;
-//             }
-//             else
-//             {
-//                 prev_sep = 0;
-//                 p++;
-//                 i++;
-//                 continue;
-//             }
-//         }
-//         else if (*p == mcs[0] && *(p + 1) == mcs[1])
-//         {
-//             row.hl[i] = HL_MLCOMMENT;
-//             row.hl[i + 1] = HL_MLCOMMENT;
-//             p += 2;
-//             i += 2;
-//             in_comment = 1;
-//             prev_sep = 0;
-//             continue;
-//         }
-
-//         // Handle "" and ''
-
-//         if (in_string)
-//         {
-//             row.hl[i] = HL_STRING;
-//             if (*p == '\\')
-//             {
-//                 row.hl[i + 1] = HL_STRING;
-//                 p += 2;
-//                 i += 2;
-//                 prev_sep = 0;
-//                 continue;
-//             }
-//             if (*p == in_string)
-//                 in_string = 0;
-//             p++;
-//             i++;
-//             continue;
-//         }
-//         else
-//         {
-//             if (*p == '"' || *p == '\'')
-//             {
-//                 in_string = *p;
-//                 row.hl[i] = HL_STRING;
-//                 p++;
-//                 i++;
-//                 prev_sep = 0;
-//                 continue;
-//             }
-//         }
-
-//         // Handle non printable chars.
-
-//         if (!isprint(*p))
-//         {
-//             row.hl[i] = HL_NONPRINT;
-//             p++;
-//             i++;
-//             prev_sep = 0;
-//             continue;
-//         }
-
-//         // Handle numbers
-
-//         if ((isdigit(*p) && (prev_sep || row.hl[i - 1] == HL_NUMBER)) ||
-//             (*p == '.' && i > 0 && row.hl[i - 1] == HL_NUMBER))
-//         {
-//             row.hl[i] = HL_NUMBER;
-//             p++;
-//             i++;
-//             prev_sep = 0;
-//             continue;
-//         }
-
-//         // Handle keywords and lib calls
-
-//         if (prev_sep)
-//         {
-//             int j;
-//             for (j = 0; keywords[j]; j++)
-//             {
-//                 int klen = strlen(keywords[j]);
-//                 int kw2 = keywords[j][klen - 1] == '|';
-//                 if (kw2)
-//                     klen--;
-
-//                 if (!memcmp(p, keywords[j], klen) &&
-//                     is_separator(*(p + klen)))
-//                 {
-//                     // Keyword
-
-//                     memset(row.hl + i, kw2 ? HL_KEYWORD2 : HL_KEYWORD1, klen);
-//                     p += klen;
-//                     i += klen;
-//                     break;
-//                 }
-//             }
-//             if (keywords[j] != null)
-//             {
-//                 prev_sep = 0;
-//                 continue; // We had a keyword match
-//             }
-//         }
-
-//         // Not special chars
-
-//         prev_sep = is_separator(*p);
-//         p++;
-//         i++;
-//     }
-
-//     // Propagate syntax change to the next row if the open commen
-//     // state changed. This may recursively affect all the following rows
-//     // in the file.
-
-//     int oc = editorRowHasOpenComment(row);
-//     if (row.hl_oc != oc && row.idx + 1 < E.numrows)
-//         editorUpdateSyntax(&E.row[row.idx + 1]);
-//     row.hl_oc = oc;
-// }
-
 /// Maps syntax highlight token types to terminal colors.
 fn editorSyntaxToColor(hl: i32) i32 {
     return switch (hl) {
@@ -770,62 +814,7 @@ fn editorSelectSyntaxHighlight(filename: []const u8) void {
     }
 }
 
-// // ======================= Editor rows implementation =======================
-
-// // Update the rendered version and the syntax highlight of a row.
-
-// void editorUpdateRow(erow *row)
-// {
-//     unsigned int tabs = 0, nonprint = 0;
-//     int j, idx;
-
-//     // Create a version of the row we can directly print on the screen,
-//     // respecting tabs, substituting non printable characters with '?'.
-
-//     free(row.render);
-//     for (j = 0; j < row.size; j++)
-//         if (row.chars[j] == TAB)
-//             tabs++;
-
-//     unsigned long long allocsize =
-//         (unsigned long long)row.size + tabs * 8 + nonprint * 9 + 1;
-//     if (allocsize > UINT32_MAX)
-//     {
-//         printf("Some line of the edited file is too long for kilo\n");
-//         exit(1);
-//     }
-
-//     row.render = malloc(row.size + tabs * 8 + nonprint * 9 + 1);
-//     idx = 0;
-//     for (j = 0; j < row.size; j++)
-//     {
-//         if (row.chars[j] == TAB)
-//         {
-//             row.render[idx++] = ' ';
-//             while ((idx + 1) % 8 != 0)
-//                 row.render[idx++] = ' ';
-//         }
-//         else
-//         {
-//             row.render[idx++] = row.chars[j];
-//         }
-//     }
-//     row.rsize = idx;
-//     row.render[idx] = '\0';
-
-//     // Update the syntax highlighting attributes of the row.
-
-//     editorUpdateSyntax(row);
-// }
-
-// // Free row's heap allocated stuff.
-
-// void editorFreeRow(erow *row)
-// {
-//     free(row.render);
-//     free(row.chars);
-//     free(row.hl);
-// }
+// ======================= Editor rows implementation =======================
 
 // // Remove the row at the specified position, shifting the remainign on the
 // // top.
