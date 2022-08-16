@@ -2,6 +2,7 @@ const std = @import("std");
 const c = @import("c");
 
 var allocator: std.mem.Allocator = undefined;
+var running = true;
 
 // Kilo -- A very simple editor in less than 1-kilo lines of code (as counted
 //         by "cloc"). Does not depend on libcurses, directly emits VT100
@@ -36,35 +37,16 @@ var allocator: std.mem.Allocator = undefined;
 // #define _POSIX_C_SOURCE 200809L
 // #endif
 
-// #include <termios.h>
-// #include <stdlib.h>
-// #include <stdio.h>
-// #include <stdint.h>
-// #include <errno.h>
-// #include <string.h>
-// #include <ctype.h>
-// #include <time.h>
-// #include <sys/types.h>
-// #include <sys/ioctl.h>
-// #include <sys/time.h>
-// #include <unistd.h>
-// #include <stdarg.h>
-// #include <fcntl.h>
-// #include <signal.h>
-
-// // Syntax highlight types
-
-// #define HL_NORMAL 0
-// #define HL_NONPRINT 1
-// #define HL_COMMENT 2 // Single line comment.
-
-// #define HL_MLCOMMENT 3 // Multi-line comment.
-
-// #define HL_KEYWORD1 4
-// #define HL_KEYWORD2 5
-// #define HL_STRING 6
-// #define HL_NUMBER 7
-// #define HL_MATCH 8 // Search match.
+// Syntax highlight types
+const HL_NORMAL= 0;
+const HL_NONPRINT= 1;
+const HL_COMMENT= 2; // Single line comment.
+const HL_MLCOMMENT= 3; // Multi-line comment.
+const HL_KEYWORD1= 4;
+const HL_KEYWORD2= 5;
+const HL_STRING= 6;
+const HL_NUMBER= 7;
+const HL_MATCH= 8; // Search match.
 
 const HL_HIGHLIGHT_STRINGS = (1 << 0);
 const HL_HIGHLIGHT_NUMBERS = (1 << 1);
@@ -86,13 +68,13 @@ const Erow = struct {
     /// Size of the row, excluding the null term.
     size: i32,
     /// Size of the rendered row.
-    rsize: i32,
+    rsize: u32,
     /// Row content.
-    chars: *u8,
+    chars: std.ArrayList(u8),
     /// Row content "rendered" for screen (for TABs).
-    render: *u8,
+    render: std.ArrayList(u8),
     /// Syntax highlight type for each character in render.
-    hl: *u8,
+    hl: std.ArrayList(u8),
     /// Row had open comment at end in last syntax highlight check.
     hl_oc: i32,
 };
@@ -103,31 +85,47 @@ const Erow = struct {
 // } hlcolor;
 
 const EditorConfig = struct {
+    const Self = @This();
+
     /// Cursor x and y position in characters
     cx: i32 = 0,
     cy: i32 = 0,
     /// Offset of row displayed.
-    rowoff: i32 = 0,
+    rowoff: u32 = 0,
     /// Offset of column displayed.
-    coloff: i32 = 0,
+    coloff: u32 = 0,
     /// Number of rows that we can show
-    screenrows: i32,
+    screenrows: u32 = 0,
     /// Number of cols that we can show
-    screencols: i32,
-    /// Number of rows
-    numrows: i32 = 0,
+    screencols: u32 = 0,
     /// Is terminal raw mode enabled?
     rawmode: bool = false,
     /// Rows
-    row: ?*Erow = null,
+    row: std.ArrayList(Erow),
     /// File modified but not saved.
     dirty: i32 = 0,
     /// Currently open filename
     filename: ?*u8 = null,
-    statusmsg: [80]u8,
-    statusmsg_time: c.time_t,
+    statusmsg: [80]u8 = undefined,
+    statusmsg_time: c.time_t = undefined,
     /// Current syntax highlight, or null.
     syntax: ?*const EditorSyntax = null,
+
+    fn init(a: std.mem.Allocator) Self {
+        return Self{
+            .row = std.ArrayList(Erow).init(a),
+        };
+    }
+
+    fn deinit(self: Self) void {
+        self.row.deinit();
+    }
+
+    fn rows(self: Self) []const Erow {
+        const start = self.rowoff;
+        const end = std.math.min(start + self.screenrows, self.row.items.len);
+        return self.row.items[start..end];
+    }
 };
 
 var E: EditorConfig = undefined;
@@ -348,7 +346,7 @@ fn editorReadKey(fd: i32) KEY_ACTION {
 /// Use the ESC [6n escape sequence to query the horizontal cursor position
 /// and return it. On error -1 is returned, on success the position of the
 /// cursor is stored at *rows and *cols and 0 is returned.
-fn getCursorPosition(ifd: i32, ofd: i32, rows: *i32, cols: *i32) !void {
+fn getCursorPosition(ifd: i32, ofd: i32, rows: *u32, cols: *u32) !void {
 
     // Report cursor location
     if (c.write(ofd, "\x1b[6n", 4) != 4)
@@ -375,14 +373,14 @@ fn getCursorPosition(ifd: i32, ofd: i32, rows: *i32, cols: *i32) !void {
 /// Try to get the number of columns in the current terminal. If the ioctl()
 /// call fails the function will try to query the terminal itself.
 /// Returns 0 on success, -1 on error.
-fn getWindowSize(ifd: i32, ofd: i32, rows: *i32, cols: *i32) !void {
+fn getWindowSize(ifd: i32, ofd: i32, rows: *u32, cols: *u32) !void {
     var ws: c.winsize = undefined;
 
     if (c.ioctl(1, c.TIOCGWINSZ, &ws) == -1 or ws.ws_col == 0) {
         // ioctl() failed. Try to query the terminal itself.
 
-        var orig_row: i32 = undefined;
-        var orig_col: i32 = undefined;
+        var orig_row: u32 = undefined;
+        var orig_col: u32 = undefined;
         // Get the initial position so we can restore it later.
         try getCursorPosition(ifd, ofd, &orig_row, &orig_col);
 
@@ -416,34 +414,34 @@ fn getWindowSize(ifd: i32, ofd: i32, rows: *i32, cols: *i32) !void {
 
 // int editorRowHasOpenComment(erow *row)
 // {
-//     if (row->hl && row->rsize && row->hl[row->rsize - 1] == HL_MLCOMMENT &&
-//         (row->rsize < 2 || (row->render[row->rsize - 2] != '*' ||
-//                             row->render[row->rsize - 1] != '/')))
+//     if (row.hl && row.rsize && row.hl[row.rsize - 1] == HL_MLCOMMENT &&
+//         (row.rsize < 2 || (row.render[row.rsize - 2] != '*' ||
+//                             row.render[row.rsize - 1] != '/')))
 //         return 1;
 //     return 0;
 // }
 
-// // Set every byte of row->hl (that corresponds to every character in the line)
+// // Set every byte of row.hl (that corresponds to every character in the line)
 // // to the right syntax highlight type (HL_* defines).
 
 // void editorUpdateSyntax(erow *row)
 // {
-//     row->hl = realloc(row->hl, row->rsize);
-//     memset(row->hl, HL_NORMAL, row->rsize);
+//     row.hl = realloc(row.hl, row.rsize);
+//     memset(row.hl, HL_NORMAL, row.rsize);
 
 //     if (E.syntax == null)
 //         return; // No syntax, everything is HL_NORMAL.
 
 //     int i, prev_sep, in_string, in_comment;
 //     char *p;
-//     char **keywords = E.syntax->keywords;
-//     char *scs = E.syntax->singleline_comment_start;
-//     char *mcs = E.syntax->multiline_comment_start;
-//     char *mce = E.syntax->multiline_comment_end;
+//     char **keywords = E.syntax.keywords;
+//     char *scs = E.syntax.singleline_comment_start;
+//     char *mcs = E.syntax.multiline_comment_start;
+//     char *mce = E.syntax.multiline_comment_end;
 
 //     // Point to the first non-space char.
 
-//     p = row->render;
+//     p = row.render;
 //     i = 0; // Current char offset
 
 //     while (*p && isspace(*p))
@@ -460,7 +458,7 @@ fn getWindowSize(ifd: i32, ofd: i32, rows: *i32, cols: *i32) !void {
 //     // If the previous line has an open comment, this line starts
 //     // with an open comment state.
 
-//     if (row->idx > 0 && editorRowHasOpenComment(&E.row[row->idx - 1]))
+//     if (row.idx > 0 && editorRowHasOpenComment(&E.row[row.idx - 1]))
 //         in_comment = 1;
 
 //     while (*p)
@@ -471,7 +469,7 @@ fn getWindowSize(ifd: i32, ofd: i32, rows: *i32, cols: *i32) !void {
 //         {
 //             // From here to end is a comment
 
-//             memset(row->hl + i, HL_COMMENT, row->size - i);
+//             memset(row.hl + i, HL_COMMENT, row.size - i);
 //             return;
 //         }
 
@@ -479,10 +477,10 @@ fn getWindowSize(ifd: i32, ofd: i32, rows: *i32, cols: *i32) !void {
 
 //         if (in_comment)
 //         {
-//             row->hl[i] = HL_MLCOMMENT;
+//             row.hl[i] = HL_MLCOMMENT;
 //             if (*p == mce[0] && *(p + 1) == mce[1])
 //             {
-//                 row->hl[i + 1] = HL_MLCOMMENT;
+//                 row.hl[i + 1] = HL_MLCOMMENT;
 //                 p += 2;
 //                 i += 2;
 //                 in_comment = 0;
@@ -499,8 +497,8 @@ fn getWindowSize(ifd: i32, ofd: i32, rows: *i32, cols: *i32) !void {
 //         }
 //         else if (*p == mcs[0] && *(p + 1) == mcs[1])
 //         {
-//             row->hl[i] = HL_MLCOMMENT;
-//             row->hl[i + 1] = HL_MLCOMMENT;
+//             row.hl[i] = HL_MLCOMMENT;
+//             row.hl[i + 1] = HL_MLCOMMENT;
 //             p += 2;
 //             i += 2;
 //             in_comment = 1;
@@ -512,10 +510,10 @@ fn getWindowSize(ifd: i32, ofd: i32, rows: *i32, cols: *i32) !void {
 
 //         if (in_string)
 //         {
-//             row->hl[i] = HL_STRING;
+//             row.hl[i] = HL_STRING;
 //             if (*p == '\\')
 //             {
-//                 row->hl[i + 1] = HL_STRING;
+//                 row.hl[i + 1] = HL_STRING;
 //                 p += 2;
 //                 i += 2;
 //                 prev_sep = 0;
@@ -532,7 +530,7 @@ fn getWindowSize(ifd: i32, ofd: i32, rows: *i32, cols: *i32) !void {
 //             if (*p == '"' || *p == '\'')
 //             {
 //                 in_string = *p;
-//                 row->hl[i] = HL_STRING;
+//                 row.hl[i] = HL_STRING;
 //                 p++;
 //                 i++;
 //                 prev_sep = 0;
@@ -544,7 +542,7 @@ fn getWindowSize(ifd: i32, ofd: i32, rows: *i32, cols: *i32) !void {
 
 //         if (!isprint(*p))
 //         {
-//             row->hl[i] = HL_NONPRINT;
+//             row.hl[i] = HL_NONPRINT;
 //             p++;
 //             i++;
 //             prev_sep = 0;
@@ -553,10 +551,10 @@ fn getWindowSize(ifd: i32, ofd: i32, rows: *i32, cols: *i32) !void {
 
 //         // Handle numbers
 
-//         if ((isdigit(*p) && (prev_sep || row->hl[i - 1] == HL_NUMBER)) ||
-//             (*p == '.' && i > 0 && row->hl[i - 1] == HL_NUMBER))
+//         if ((isdigit(*p) && (prev_sep || row.hl[i - 1] == HL_NUMBER)) ||
+//             (*p == '.' && i > 0 && row.hl[i - 1] == HL_NUMBER))
 //         {
-//             row->hl[i] = HL_NUMBER;
+//             row.hl[i] = HL_NUMBER;
 //             p++;
 //             i++;
 //             prev_sep = 0;
@@ -580,7 +578,7 @@ fn getWindowSize(ifd: i32, ofd: i32, rows: *i32, cols: *i32) !void {
 //                 {
 //                     // Keyword
 
-//                     memset(row->hl + i, kw2 ? HL_KEYWORD2 : HL_KEYWORD1, klen);
+//                     memset(row.hl + i, kw2 ? HL_KEYWORD2 : HL_KEYWORD1, klen);
 //                     p += klen;
 //                     i += klen;
 //                     break;
@@ -605,40 +603,38 @@ fn getWindowSize(ifd: i32, ofd: i32, rows: *i32, cols: *i32) !void {
 //     // in the file.
 
 //     int oc = editorRowHasOpenComment(row);
-//     if (row->hl_oc != oc && row->idx + 1 < E.numrows)
-//         editorUpdateSyntax(&E.row[row->idx + 1]);
-//     row->hl_oc = oc;
+//     if (row.hl_oc != oc && row.idx + 1 < E.numrows)
+//         editorUpdateSyntax(&E.row[row.idx + 1]);
+//     row.hl_oc = oc;
 // }
 
-// // Maps syntax highlight token types to terminal colors.
+/// Maps syntax highlight token types to terminal colors.
+fn editorSyntaxToColor(hl: i32) i32
+{
+    return switch (hl)
+    {
+        // cyan
+        HL_COMMENT, HL_MLCOMMENT => 36,
 
-// int editorSyntaxToColor(int hl)
-// {
-//     switch (hl)
-//     {
-//     case HL_COMMENT:
-//     case HL_MLCOMMENT:
-//         return 36; // cyan
+        // yellow
+    HL_KEYWORD1 =>  33,
 
-//     case HL_KEYWORD1:
-//         return 33; // yellow
+     // green
+    HL_KEYWORD2 => 32,
 
-//     case HL_KEYWORD2:
-//         return 32; // green
+     // magenta
+    HL_STRING =>35,
 
-//     case HL_STRING:
-//         return 35; // magenta
+     // red
+    HL_NUMBER =>31,
 
-//     case HL_NUMBER:
-//         return 31; // red
+     // blu
+    HL_MATCH=>34,
 
-//     case HL_MATCH:
-//         return 34; // blu
-
-//     default:
-//         return 37; // white
-//     }
-// }
+     // white
+    else =>37,
+    };
+}
 
 /// Select the syntax highlight scheme depending on the filename,
 /// setting it in the global state E.syntax.
@@ -666,36 +662,36 @@ fn editorSelectSyntaxHighlight(filename: []const u8) void {
 //     // Create a version of the row we can directly print on the screen,
 //     // respecting tabs, substituting non printable characters with '?'.
 
-//     free(row->render);
-//     for (j = 0; j < row->size; j++)
-//         if (row->chars[j] == TAB)
+//     free(row.render);
+//     for (j = 0; j < row.size; j++)
+//         if (row.chars[j] == TAB)
 //             tabs++;
 
 //     unsigned long long allocsize =
-//         (unsigned long long)row->size + tabs * 8 + nonprint * 9 + 1;
+//         (unsigned long long)row.size + tabs * 8 + nonprint * 9 + 1;
 //     if (allocsize > UINT32_MAX)
 //     {
 //         printf("Some line of the edited file is too long for kilo\n");
 //         exit(1);
 //     }
 
-//     row->render = malloc(row->size + tabs * 8 + nonprint * 9 + 1);
+//     row.render = malloc(row.size + tabs * 8 + nonprint * 9 + 1);
 //     idx = 0;
-//     for (j = 0; j < row->size; j++)
+//     for (j = 0; j < row.size; j++)
 //     {
-//         if (row->chars[j] == TAB)
+//         if (row.chars[j] == TAB)
 //         {
-//             row->render[idx++] = ' ';
+//             row.render[idx++] = ' ';
 //             while ((idx + 1) % 8 != 0)
-//                 row->render[idx++] = ' ';
+//                 row.render[idx++] = ' ';
 //         }
 //         else
 //         {
-//             row->render[idx++] = row->chars[j];
+//             row.render[idx++] = row.chars[j];
 //         }
 //     }
-//     row->rsize = idx;
-//     row->render[idx] = '\0';
+//     row.rsize = idx;
+//     row.render[idx] = '\0';
 
 //     // Update the syntax highlighting attributes of the row.
 
@@ -733,9 +729,9 @@ fn editorSelectSyntaxHighlight(filename: []const u8) void {
 
 // void editorFreeRow(erow *row)
 // {
-//     free(row->render);
-//     free(row->chars);
-//     free(row->hl);
+//     free(row.render);
+//     free(row.chars);
+//     free(row.hl);
 // }
 
 // // Remove the row at the specified position, shifting the remainign on the
@@ -792,29 +788,29 @@ fn editorSelectSyntaxHighlight(filename: []const u8) void {
 
 // void editorRowInsertChar(erow *row, int at, int c)
 // {
-//     if (at > row->size)
+//     if (at > row.size)
 //     {
 //         // Pad the string with spaces if the insert location is outside the
 //         // current length by more than a single character.
 
-//         int padlen = at - row->size;
+//         int padlen = at - row.size;
 //         // In the next line +2 means: new char and null term.
 
-//         row->chars = realloc(row->chars, row->size + padlen + 2);
-//         memset(row->chars + row->size, ' ', padlen);
-//         row->chars[row->size + padlen + 1] = '\0';
-//         row->size += padlen + 1;
+//         row.chars = realloc(row.chars, row.size + padlen + 2);
+//         memset(row.chars + row.size, ' ', padlen);
+//         row.chars[row.size + padlen + 1] = '\0';
+//         row.size += padlen + 1;
 //     }
 //     else
 //     {
 //         // If we are in the middle of the string just make space for 1 new
 //         // char plus the (already existing) null term.
 
-//         row->chars = realloc(row->chars, row->size + 2);
-//         memmove(row->chars + at + 1, row->chars + at, row->size - at + 1);
-//         row->size++;
+//         row.chars = realloc(row.chars, row.size + 2);
+//         memmove(row.chars + at + 1, row.chars + at, row.size - at + 1);
+//         row.size++;
 //     }
-//     row->chars[at] = c;
+//     row.chars[at] = c;
 //     editorUpdateRow(row);
 //     E.dirty++;
 // }
@@ -823,10 +819,10 @@ fn editorSelectSyntaxHighlight(filename: []const u8) void {
 
 // void editorRowAppendString(erow *row, char *s, size_t len)
 // {
-//     row->chars = realloc(row->chars, row->size + len + 1);
-//     memcpy(row->chars + row->size, s, len);
-//     row->size += len;
-//     row->chars[row->size] = '\0';
+//     row.chars = realloc(row.chars, row.size + len + 1);
+//     memcpy(row.chars + row.size, s, len);
+//     row.size += len;
+//     row.chars[row.size] = '\0';
 //     editorUpdateRow(row);
 //     E.dirty++;
 // }
@@ -835,11 +831,11 @@ fn editorSelectSyntaxHighlight(filename: []const u8) void {
 
 // void editorRowDelChar(erow *row, int at)
 // {
-//     if (row->size <= at)
+//     if (row.size <= at)
 //         return;
-//     memmove(row->chars + at, row->chars + at + 1, row->size - at);
+//     memmove(row.chars + at, row.chars + at + 1, row.size - at);
 //     editorUpdateRow(row);
-//     row->size--;
+//     row.size--;
 //     E.dirty++;
 // }
 
@@ -887,8 +883,8 @@ fn editorInsertNewline() void {
     //     // If the cursor is over the current line size, we want to conceptually
     //     // think it's just over the last character.
 
-    //     if (filecol >= row->size)
-    //         filecol = row->size;
+    //     if (filecol >= row.size)
+    //         filecol = row.size;
     //     if (filecol == 0)
     //     {
     //         editorInsertRow(filerow, "", 0);
@@ -897,10 +893,10 @@ fn editorInsertNewline() void {
     //     {
     //         // We are in the middle of a line. Split it between two rows.
 
-    //         editorInsertRow(filerow + 1, row->chars + filecol, row->size - filecol);
+    //         editorInsertRow(filerow + 1, row.chars + filecol, row.size - filecol);
     //         row = &E.row[filerow];
-    //         row->chars[filecol] = '\0';
-    //         row->size = filecol;
+    //         row.chars[filecol] = '\0';
+    //         row.size = filecol;
     //         editorUpdateRow(row);
     //     }
     // fixcursor:
@@ -932,7 +928,7 @@ fn editorInsertNewline() void {
 //         // on the right of the previous one.
 
 //         filecol = E.row[filerow - 1].size;
-//         editorRowAppendString(&E.row[filerow - 1], row->chars, row->size);
+//         editorRowAppendString(&E.row[filerow - 1], row.chars, row.size);
 //         editorDelRow(filerow);
 //         row = null;
 //         if (E.cy == 0)
@@ -1042,7 +1038,7 @@ const Abuf = std.ArrayList(u8);
 
 /// This function writes the whole screen using VT100 escape characters
 /// starting from the logical state of the editor in the global state 'E'.
-fn editorRefreshScreen() !void {
+fn editorRefreshScreen() void {
     //     erow *r;
     //     char buf[32];
     var ab = Abuf.init(allocator);
@@ -1055,91 +1051,96 @@ fn editorRefreshScreen() !void {
     }
 
     // Hide cursor.
-    try ab.appendSlice("\x1b[?25l");
+    ab.appendSlice("\x1b[?25l") catch unreachable;
+    // Show cursor.
+    defer ab.appendSlice("\x1b[?25h") catch unreachable;
 
     // Go home.
-    try ab.appendSlice("\x1b[H");
+    ab.appendSlice("\x1b[H") catch unreachable;
 
-    //     int y;
-    //     for (y = 0; y < E.screenrows; y++)
-    //     {
-    //         int filerow = E.rowoff + y;
+    for (E.rows()) |r| {
 
-    //         if (filerow >= E.numrows)
-    //         {
-    //             if (E.numrows == 0 && y == E.screenrows / 3)
-    //             {
-    //                 char welcome[80];
-    //                 int welcomelen = snprintf(welcome, sizeof(welcome),
-    //                                           "Kilo editor -- verison %s\x1b[0K\r\n", KILO_VERSION);
-    //                 int padding = (E.screencols - welcomelen) / 2;
-    //                 if (padding)
-    //                 {
-    //                     abAppend(&ab, "~", 1);
-    //                     padding--;
-    //                 }
-    //                 while (padding--)
-    //                     abAppend(&ab, " ", 1);
-    //                 abAppend(&ab, welcome, welcomelen);
-    //             }
-    //             else
-    //             {
-    //                 abAppend(&ab, "~\x1b[0K\r\n", 7);
-    //             }
-    //             continue;
-    //         }
+        //     int y;
+        //     for (y = 0; y < E.screenrows; y++)
+        //     {
+        //         int filerow = E.rowoff + y;
 
-    //         r = &E.row[filerow];
+        //         if (filerow >= E.numrows)
+        //         {
+        //             if (E.numrows == 0 && y == E.screenrows / 3)
+        //             {
+        //                 char welcome[80];
+        //                 int welcomelen = snprintf(welcome, sizeof(welcome),
+        //                                           "Kilo editor -- verison %s\x1b[0K\r\n", KILO_VERSION);
+        //                 int padding = (E.screencols - welcomelen) / 2;
+        //                 if (padding)
+        //                 {
+        //                     abAppend(&ab, "~", 1);
+        //                     padding--;
+        //                 }
+        //                 while (padding--)
+        //                     abAppend(&ab, " ", 1);
+        //                 abAppend(&ab, welcome, welcomelen);
+        //             }
+        //             else
+        //             {
+        //                 abAppend(&ab, "~\x1b[0K\r\n", 7);
+        //             }
+        //             continue;
+        //         }
 
-    //         int len = r->rsize - E.coloff;
-    //         int current_color = -1;
-    //         if (len > 0)
-    //         {
-    //             if (len > E.screencols)
-    //                 len = E.screencols;
-    //             char *c = r->render + E.coloff;
-    //             unsigned char *hl = r->hl + E.coloff;
-    //             int j;
-    //             for (j = 0; j < len; j++)
-    //             {
-    //                 if (hl[j] == HL_NONPRINT)
-    //                 {
-    //                     char sym;
-    //                     abAppend(&ab, "\x1b[7m", 4);
-    //                     if (c[j] <= 26)
-    //                         sym = '@' + c[j];
-    //                     else
-    //                         sym = '?';
-    //                     abAppend(&ab, &sym, 1);
-    //                     abAppend(&ab, "\x1b[0m", 4);
-    //                 }
-    //                 else if (hl[j] == HL_NORMAL)
-    //                 {
-    //                     if (current_color != -1)
-    //                     {
-    //                         abAppend(&ab, "\x1b[39m", 5);
-    //                         current_color = -1;
-    //                     }
-    //                     abAppend(&ab, c + j, 1);
-    //                 }
-    //                 else
-    //                 {
-    //                     int color = editorSyntaxToColor(hl[j]);
-    //                     if (color != current_color)
-    //                     {
-    //                         char buf[16];
-    //                         int clen = snprintf(buf, sizeof(buf), "\x1b[%dm", color);
-    //                         current_color = color;
-    //                         abAppend(&ab, buf, clen);
-    //                     }
-    //                     abAppend(&ab, c + j, 1);
-    //                 }
-    //             }
-    //         }
-    //         abAppend(&ab, "\x1b[39m", 5);
-    //         abAppend(&ab, "\x1b[0K", 4);
-    //         abAppend(&ab, "\r\n", 2);
-    //     }
+        //         r = &E.row[filerow];
+
+        var len: u32 = r.rsize - E.coloff;
+        var current_color: i32 = -1;
+        if (len > 0)
+        {
+            if (len > E.screencols){
+                len = E.screencols;
+            }
+            var p = r.render.items[E.coloff..];
+            var hl = r.hl.items[E.coloff..];
+            var j: u32 = 0;
+            while(j<len):(j+=1)
+            {
+                if (hl[j] == HL_NONPRINT)
+                {
+                    ab.appendSlice("\x1b[7m") catch unreachable;
+                    const sym = if (p[j] <= 26)
+                        '@' + p[j]                    
+                    else
+                        '?';
+                    
+                    ab.append(sym) catch unreachable;
+                    ab.appendSlice("\x1b[0m") catch unreachable;
+                }
+                else if (hl[j] == HL_NORMAL)
+                {
+                    if (current_color != -1)
+                    {
+                        ab.appendSlice("\x1b[39m") catch unreachable;
+                        current_color = -1;
+                    }
+                    ab.append(p[j]) catch unreachable;
+                }
+                else
+                {
+                    const color = editorSyntaxToColor(hl[j]);
+                    if (color != current_color)
+                    {
+                        var buf:[16]u8 = undefined;
+                        const clen = @intCast(u32, c.snprintf(&buf[0], buf.len, "\x1b[%dm", color));
+                        current_color = color;
+                        ab.appendSlice(buf[0..clen]) catch unreachable;
+                    }
+                    ab.append(p[j]) catch unreachable;
+                }
+            }
+        }
+        ab.appendSlice("\x1b[39m") catch unreachable;
+        ab.appendSlice("\x1b[0K") catch unreachable;
+        ab.appendSlice("\r\n") catch unreachable;
+    }
 
     //     // Create a two rows status. First row:
 
@@ -1187,20 +1188,18 @@ fn editorRefreshScreen() !void {
     //     {
     //         for (j = E.coloff; j < (E.cx + E.coloff); j++)
     //         {
-    //             if (j < row->size && row->chars[j] == TAB)
+    //             if (j < row.size && row.chars[j] == TAB)
     //                 cx += 7 - ((cx) % 8);
     //             cx++;
     //         }
     //     }
     //     snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, cx);
     //     abAppend(&ab, buf, strlen(buf));
-    //     abAppend(&ab, "\x1b[?25h", 6); // Show cursor.
 
 }
 
-// // Set an editor status message for the second line of the status, at the
-// // end of the screen.
-
+/// Set an editor status message for the second line of the status, at the
+/// end of the screen.
 fn editorSetStatusMessage(fmt: [:0]const u8, args: anytype) void {
     // va_list ap;
     // va_start(ap, fmt);
@@ -1209,7 +1208,7 @@ fn editorSetStatusMessage(fmt: [:0]const u8, args: anytype) void {
     E.statusmsg_time = c.time(null);
 }
 
-// // =============================== Find mode ================================
+// =============================== Find mode ================================
 
 // #define KILO_QUERY_LEN 256
 
@@ -1319,12 +1318,12 @@ fn editorSetStatusMessage(fmt: [:0]const u8, args: anytype) void {
 //             {
 //                 erow *row = &E.row[current];
 //                 last_match = current;
-//                 if (row->hl)
+//                 if (row.hl)
 //                 {
 //                     saved_hl_line = current;
-//                     saved_hl = malloc(row->rsize);
-//                     memcpy(saved_hl, row->hl, row->rsize);
-//                     memset(row->hl + match_offset, HL_MATCH, qlen);
+//                     saved_hl = malloc(row.rsize);
+//                     memcpy(saved_hl, row.hl, row.rsize);
+//                     memset(row.hl + match_offset, HL_MATCH, qlen);
 //                 }
 //                 E.cy = 0;
 //                 E.cx = match_offset;
@@ -1343,10 +1342,9 @@ fn editorSetStatusMessage(fmt: [:0]const u8, args: anytype) void {
 //     }
 // }
 
-// // ========================= Editor events handling  ========================
+// ========================= Editor events handling  ========================
 
-// // Handle cursor position change because arrow keys were pressed.
-
+/// Handle cursor position change because arrow keys were pressed.
 // void editorMoveCursor(int key)
 // {
 //     int filerow = E.rowoff + E.cy;
@@ -1383,7 +1381,7 @@ fn editorSetStatusMessage(fmt: [:0]const u8, args: anytype) void {
 //         }
 //         break;
 //     case ARROW_RIGHT:
-//         if (row && filecol < row->size)
+//         if (row && filecol < row.size)
 //         {
 //             if (E.cx == E.screencols - 1)
 //             {
@@ -1394,7 +1392,7 @@ fn editorSetStatusMessage(fmt: [:0]const u8, args: anytype) void {
 //                 E.cx += 1;
 //             }
 //         }
-//         else if (row && filecol == row->size)
+//         else if (row && filecol == row.size)
 //         {
 //             E.cx = 0;
 //             E.coloff = 0;
@@ -1438,7 +1436,7 @@ fn editorSetStatusMessage(fmt: [:0]const u8, args: anytype) void {
 //     filerow = E.rowoff + E.cy;
 //     filecol = E.coloff + E.cx;
 //     row = (filerow >= E.numrows) ? null : &E.row[filerow];
-//     rowlen = row ? row->size : 0;
+//     rowlen = row ? row.size : 0;
 //     if (filecol > rowlen)
 //     {
 //         E.cx -= filecol - rowlen;
@@ -1450,10 +1448,9 @@ fn editorSetStatusMessage(fmt: [:0]const u8, args: anytype) void {
 //     }
 // }
 
-// // Process events arriving from the standard input, which is, the user
-// // is typing stuff on the terminal.
-
 const KILO_QUIT_TIMES = 3;
+/// Process events arriving from the standard input, which is, the user
+/// is typing stuff on the terminal.
 fn editorProcessKeypress(fd: i32) void {
     // When the file is modified, requires Ctrl-q to be pressed N times
     // before actually quitting.
@@ -1472,7 +1469,7 @@ fn editorProcessKeypress(fd: i32) void {
         KEY_ACTION.CTRL_C => {
             // We ignore ctrl-c, it can't be so simple to lose the changes
             // to the edited file.
-            c.exit(2);
+            running = false;
         },
         //     case CTRL_Q: // Ctrl-q
 
@@ -1555,13 +1552,10 @@ fn updateWindowSize() void {
 fn handleSigWinCh(_: c_int) callconv(.C) void {
     updateWindowSize();
     if (E.cy > E.screenrows)
-        E.cy = E.screenrows - 1;
+        E.cy = @intCast(i32, E.screenrows) - 1;
     if (E.cx > E.screencols)
-        E.cx = E.screencols - 1;
-    editorRefreshScreen() catch {
-        c.perror("editorRefreshScreen");
-        c.exit(1);
-    };
+        E.cx = @intCast(i32, E.screencols) - 1;
+    editorRefreshScreen();
 }
 
 pub fn main() anyerror!void {
@@ -1569,10 +1563,12 @@ pub fn main() anyerror!void {
     allocator = gpa.allocator();
     defer std.debug.assert(!gpa.deinit());
 
+    E = EditorConfig.init(allocator);
+    defer E.deinit();
+
     var it = std.process.ArgIterator.init();
     // skip arg0
     _ = it.next();
-
     const arg = it.next() orelse {
         _ = c.fprintf(c.stderr, "Usage: kilo <filename>\n");
         c.exit(1);
@@ -1583,9 +1579,11 @@ pub fn main() anyerror!void {
     editorSelectSyntaxHighlight(arg);
     //     editorOpen(argv[1]);
     try enableRawMode(c.STDIN_FILENO);
+    defer disableRawMode(c.STDIN_FILENO);
+
     editorSetStatusMessage("HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find", .{});
-    while (true) {
-        try editorRefreshScreen();
+    while (running) {
+        editorRefreshScreen();
         editorProcessKeypress(c.STDIN_FILENO);
     }
 }
