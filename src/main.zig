@@ -104,30 +104,30 @@ const Erow = struct {
 
 const EditorConfig = struct {
     /// Cursor x and y position in characters
-    cx: i32,
-    cy: i32,
+    cx: i32 = 0,
+    cy: i32 = 0,
     /// Offset of row displayed.
-    rowoff: i32,
+    rowoff: i32 = 0,
     /// Offset of column displayed.
-    coloff: i32,
+    coloff: i32 = 0,
     /// Number of rows that we can show
     screenrows: i32,
     /// Number of cols that we can show
     screencols: i32,
     /// Number of rows
-    numrows: i32,
+    numrows: i32 = 0,
     /// Is terminal raw mode enabled?
     rawmode: i32,
     /// Rows
-    row: ?*Erow,
+    row: ?*Erow = null,
     /// File modified but not saved.
-    dirty: i32,
+    dirty: i32 = 0,
     /// Currently open filename
-    filename: ?*u8,
+    filename: ?*u8 = null,
     statusmsg: [80]u8,
     statusmsg_time: c.time_t,
     /// Current syntax highlight, or null.
-    syntax: ?*const EditorSyntax,
+    syntax: ?*const EditorSyntax = null,
 };
 
 var E: EditorConfig = undefined;
@@ -1591,20 +1591,6 @@ fn handleSigWinCh(_: c_int) callconv(.C) void {
     };
 }
 
-fn initEditor() void {
-    E.cx = 0;
-    E.cy = 0;
-    E.rowoff = 0;
-    E.coloff = 0;
-    E.numrows = 0;
-    E.row = null;
-    E.dirty = 0;
-    E.filename = null;
-    E.syntax = null;
-    updateWindowSize();
-    _ = c.signal(c.SIGWINCH, handleSigWinCh);
-}
-
 pub fn main() anyerror!void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     allocator = gpa.allocator();
@@ -1619,7 +1605,8 @@ pub fn main() anyerror!void {
         c.exit(1);
     };
 
-    initEditor();
+    updateWindowSize();
+    _ = c.signal(c.SIGWINCH, handleSigWinCh);
     editorSelectSyntaxHighlight(arg);
     //     editorOpen(argv[1]);
     //     enableRawMode(STDIN_FILENO);
