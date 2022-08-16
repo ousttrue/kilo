@@ -159,8 +159,6 @@ const KEY_ACTION = enum(u32) {
     PAGE_DOWN,
 };
 
-// void editorSetStatusMessage(const char *fmt, ...);
-
 // =========================== Syntax highlights DB =========================
 // In order to add a new syntax, define two arrays with a list of file name
 // matches and keywords. The file name matches are used in order to match
@@ -1221,14 +1219,13 @@ fn editorRefreshScreen() !void {
 // // Set an editor status message for the second line of the status, at the
 // // end of the screen.
 
-// void editorSetStatusMessage(const char *fmt, ...)
-// {
-//     va_list ap;
-//     va_start(ap, fmt);
-//     vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
-//     va_end(ap);
-//     E.statusmsg_time = time(null);
-// }
+fn editorSetStatusMessage(fmt: [:0]const u8, args: anytype) void {
+    // va_list ap;
+    // va_start(ap, fmt);
+    _ = @call(.{}, c.snprintf, .{ &E.statusmsg[0], E.statusmsg.len, &fmt[0] } ++ args);
+    // va_end(ap);
+    E.statusmsg_time = c.time(null);
+}
 
 // // =============================== Find mode ================================
 
@@ -1603,8 +1600,7 @@ pub fn main() anyerror!void {
     editorSelectSyntaxHighlight(arg);
     //     editorOpen(argv[1]);
     try enableRawMode(c.STDIN_FILENO);
-    //     editorSetStatusMessage(
-    //         "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find");
+    editorSetStatusMessage("HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find", .{});
     //     while (1)
     //     {
     //         editorRefreshScreen();
