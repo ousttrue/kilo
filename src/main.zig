@@ -66,7 +66,7 @@ const Erow = struct {
     /// Row index in the file, zero-based.
     idx: i32,
     /// Size of the row, excluding the null term.
-    size: i32,
+    size: u32,
     /// Size of the rendered row.
     rsize: u32,
     /// Row content.
@@ -125,6 +125,28 @@ const EditorConfig = struct {
         const start = self.rowoff;
         const end = std.math.min(start + self.screenrows, self.row.items.len);
         return self.row.items[start..end];
+    }
+
+    fn getRow(self: Self, row: u32) ?Erow {
+        return if (row < self.row.items.len)
+            self.row.items[row]
+        else
+            null;
+    }
+
+    /// Fix cx if the current line has not enough chars.
+    fn fixCursor(self: *Self) void {
+        const filerow = self.rowoff + self.cy;
+        const filecol = self.coloff + self.cx;
+        const row = self.getRow(filerow);
+        const rowlen = if (row) |r| r.size else 0;
+        if (filecol > rowlen) {
+            self.cx -= filecol - rowlen;
+            if (self.cx < 0) {
+                self.coloff += self.cx;
+                self.cx = 0;
+            }
+        }
     }
 };
 
@@ -1318,108 +1340,70 @@ fn editorSetStatusMessage(fmt: [:0]const u8, args: anytype) void {
 // ========================= Editor events handling  ========================
 
 /// Handle cursor position change because arrow keys were pressed.
-// void editorMoveCursor(int key)
-// {
-//     int filerow = E.rowoff + E.cy;
-//     int filecol = E.coloff + E.cx;
-//     int rowlen;
-//     erow *row = (filerow >= E.numrows) ? null : &E.row[filerow];
+fn editorMoveCursor(key: KEY_ACTION) void {
+    const filerow = E.rowoff + E.cy;
+    const filecol = E.coloff + E.cx;
+    const row = E.getRow(filerow);
+    switch (key) {
+        .ARROW_LEFT => {
+            if (E.cx == 0) {
+                if (E.coloff > 0) {
+                    E.coloff -= 1;
+                } else {
+                    if (filerow > 0) {
+                        E.cy -= 1;
+                        E.cx = E.row.items[filerow - 1].size;
+                        if (E.cx > E.screencols - 1) {
+                            E.coloff = E.cx - E.screencols + 1;
+                            E.cx = E.screencols - 1;
+                        }
+                    }
+                }
+            } else {
+                E.cx -= 1;
+            }
+        },
+        .ARROW_RIGHT => {
+            if (row) |r| {
+                if (filecol < r.size) {
+                    if (E.cx == E.screencols - 1) {
+                        E.coloff += 1;
+                    } else {
+                        E.cx += 1;
+                    }
+                } else if (filecol == r.size) {
+                    E.cx = 0;
+                    E.coloff = 0;
+                    if (E.cy == E.screenrows - 1) {
+                        E.rowoff += 1;
+                    } else {
+                        E.cy += 1;
+                    }
+                }
+            }
+        },
+        .ARROW_UP => {
+            if (E.cy == 0) {
+                if (E.rowoff > 0)
+                    E.rowoff -= 1;
+            } else {
+                E.cy -= 1;
+            }
+        },
+        .ARROW_DOWN => {
+            if (filerow < E.row.items.len) {
+                if (E.cy == E.screenrows - 1) {
+                    E.rowoff += 1;
+                } else {
+                    E.cy += 1;
+                }
+            }
+        },
+        else => {},
+    }
 
-//     switch (key)
-//     {
-//     case ARROW_LEFT:
-//         if (E.cx == 0)
-//         {
-//             if (E.coloff)
-//             {
-//                 E.coloff--;
-//             }
-//             else
-//             {
-//                 if (filerow > 0)
-//                 {
-//                     E.cy--;
-//                     E.cx = E.row[filerow - 1].size;
-//                     if (E.cx > E.screencols - 1)
-//                     {
-//                         E.coloff = E.cx - E.screencols + 1;
-//                         E.cx = E.screencols - 1;
-//                     }
-//                 }
-//             }
-//         }
-//         else
-//         {
-//             E.cx -= 1;
-//         }
-//         break;
-//     case ARROW_RIGHT:
-//         if (row && filecol < row.size)
-//         {
-//             if (E.cx == E.screencols - 1)
-//             {
-//                 E.coloff++;
-//             }
-//             else
-//             {
-//                 E.cx += 1;
-//             }
-//         }
-//         else if (row && filecol == row.size)
-//         {
-//             E.cx = 0;
-//             E.coloff = 0;
-//             if (E.cy == E.screenrows - 1)
-//             {
-//                 E.rowoff++;
-//             }
-//             else
-//             {
-//                 E.cy += 1;
-//             }
-//         }
-//         break;
-//     case ARROW_UP:
-//         if (E.cy == 0)
-//         {
-//             if (E.rowoff)
-//                 E.rowoff--;
-//         }
-//         else
-//         {
-//             E.cy -= 1;
-//         }
-//         break;
-//     case ARROW_DOWN:
-//         if (filerow < E.numrows)
-//         {
-//             if (E.cy == E.screenrows - 1)
-//             {
-//                 E.rowoff++;
-//             }
-//             else
-//             {
-//                 E.cy += 1;
-//             }
-//         }
-//         break;
-//     }
-//     // Fix cx if the current line has not enough chars.
-
-//     filerow = E.rowoff + E.cy;
-//     filecol = E.coloff + E.cx;
-//     row = (filerow >= E.numrows) ? null : &E.row[filerow];
-//     rowlen = row ? row.size : 0;
-//     if (filecol > rowlen)
-//     {
-//         E.cx -= filecol - rowlen;
-//         if (E.cx < 0)
-//         {
-//             E.coloff += E.cx;
-//             E.cx = 0;
-//         }
-//     }
-// }
+    E.fixCursor();
+}
 
 const KILO_QUIT_TIMES = 3;
 /// Process events arriving from the standard input, which is, the user
@@ -1471,7 +1455,7 @@ fn editorProcessKeypress(fd: i32) void {
             }
             var times = E.screenrows;
             while (times > 0) : (times -= 1) {
-                // editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+                editorMoveCursor(if (ch == .PAGE_UP) .ARROW_UP else .ARROW_DOWN);
             }
         },
         .ARROW_UP,
@@ -1479,7 +1463,7 @@ fn editorProcessKeypress(fd: i32) void {
         .ARROW_LEFT,
         .ARROW_RIGHT,
         => {
-            //         editorMoveCursor(c);
+            editorMoveCursor(ch);
         },
         .CTRL_L => {
             // ctrl+l, clear screen
