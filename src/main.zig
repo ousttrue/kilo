@@ -60,9 +60,11 @@ const EditorSyntax = struct {
     flags: i32,
 };
 
-// // This structure represents a single line of the file we are editing.
+// This structure represents a single line of the file we are editing.
 
 const Erow = struct {
+    const Self = @This();
+
     /// Row index in the file, zero-based.
     idx: i32,
     /// Size of the row, excluding the null term.
@@ -77,6 +79,48 @@ const Erow = struct {
     hl: std.ArrayList(u8),
     /// Row had open comment at end in last syntax highlight check.
     hl_oc: i32,
+
+    fn draw(self: Self, ab: *std.ArrayList(u8), coloff: u32, screencols: u32) void {
+        if (self.rsize <= coloff) {
+            return;
+        }
+        var len: u32 = self.rsize - coloff;
+        var current_color: i32 = -1;
+
+        if (len > screencols) {
+            len = screencols;
+        }
+        var p = self.render.items[coloff..];
+        var hl = self.hl.items[coloff..];
+        var j: u32 = 0;
+        while (j < len) : (j += 1) {
+            if (hl[j] == HL_NONPRINT) {
+                ab.appendSlice("\x1b[7m") catch unreachable;
+                const sym = if (p[j] <= 26)
+                    '@' + p[j]
+                else
+                    '?';
+
+                ab.append(sym) catch unreachable;
+                ab.appendSlice("\x1b[0m") catch unreachable;
+            } else if (hl[j] == HL_NORMAL) {
+                if (current_color != -1) {
+                    ab.appendSlice("\x1b[39m") catch unreachable;
+                    current_color = -1;
+                }
+                ab.append(p[j]) catch unreachable;
+            } else {
+                const color = editorSyntaxToColor(hl[j]);
+                if (color != current_color) {
+                    var buf: [16]u8 = undefined;
+                    const clen = @intCast(u32, c.snprintf(&buf[0], buf.len, "\x1b[%dm", color));
+                    current_color = color;
+                    ab.appendSlice(buf[0..clen]) catch unreachable;
+                }
+                ab.append(p[j]) catch unreachable;
+            }
+        }
+    }
 };
 
 // typedef struct hlcolor
@@ -1080,43 +1124,7 @@ fn editorRefreshScreen() void {
     ab.appendSlice("\x1b[H") catch unreachable;
 
     for (E.rows()) |r| {
-        var len: u32 = r.rsize - E.coloff;
-        var current_color: i32 = -1;
-        if (len > 0) {
-            if (len > E.screencols) {
-                len = E.screencols;
-            }
-            var p = r.render.items[E.coloff..];
-            var hl = r.hl.items[E.coloff..];
-            var j: u32 = 0;
-            while (j < len) : (j += 1) {
-                if (hl[j] == HL_NONPRINT) {
-                    ab.appendSlice("\x1b[7m") catch unreachable;
-                    const sym = if (p[j] <= 26)
-                        '@' + p[j]
-                    else
-                        '?';
-
-                    ab.append(sym) catch unreachable;
-                    ab.appendSlice("\x1b[0m") catch unreachable;
-                } else if (hl[j] == HL_NORMAL) {
-                    if (current_color != -1) {
-                        ab.appendSlice("\x1b[39m") catch unreachable;
-                        current_color = -1;
-                    }
-                    ab.append(p[j]) catch unreachable;
-                } else {
-                    const color = editorSyntaxToColor(hl[j]);
-                    if (color != current_color) {
-                        var buf: [16]u8 = undefined;
-                        const clen = @intCast(u32, c.snprintf(&buf[0], buf.len, "\x1b[%dm", color));
-                        current_color = color;
-                        ab.appendSlice(buf[0..clen]) catch unreachable;
-                    }
-                    ab.append(p[j]) catch unreachable;
-                }
-            }
-        }
+        r.draw(&ab, E.coloff, E.screencols);
         ab.appendSlice("\x1b[39m") catch unreachable;
         ab.appendSlice("\x1b[0K") catch unreachable;
         ab.appendSlice("\r\n") catch unreachable;
