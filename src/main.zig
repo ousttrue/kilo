@@ -31,22 +31,22 @@ var running = true;
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 
-// #define KILO_VERSION "0.0.1"
+const KILO_VERSION = "0.0.1";
 
 // #ifdef __linux__
 // #define _POSIX_C_SOURCE 200809L
 // #endif
 
 // Syntax highlight types
-const HL_NORMAL= 0;
-const HL_NONPRINT= 1;
-const HL_COMMENT= 2; // Single line comment.
-const HL_MLCOMMENT= 3; // Multi-line comment.
-const HL_KEYWORD1= 4;
-const HL_KEYWORD2= 5;
-const HL_STRING= 6;
-const HL_NUMBER= 7;
-const HL_MATCH= 8; // Search match.
+const HL_NORMAL = 0;
+const HL_NONPRINT = 1;
+const HL_COMMENT = 2; // Single line comment.
+const HL_MLCOMMENT = 3; // Multi-line comment.
+const HL_KEYWORD1 = 4;
+const HL_KEYWORD2 = 5;
+const HL_STRING = 6;
+const HL_NUMBER = 7;
+const HL_MATCH = 8; // Search match.
 
 const HL_HIGHLIGHT_STRINGS = (1 << 0);
 const HL_HIGHLIGHT_NUMBERS = (1 << 1);
@@ -103,7 +103,7 @@ const EditorConfig = struct {
     /// Rows
     row: std.ArrayList(Erow),
     /// File modified but not saved.
-    dirty: i32 = 0,
+    dirty: bool = false,
     /// Currently open filename
     filename: ?*u8 = null,
     statusmsg: [80]u8 = undefined,
@@ -391,7 +391,7 @@ fn getWindowSize(ifd: i32, ofd: i32, rows: *u32, cols: *u32) !void {
 
         // Restore position.
         var seq: [32]u8 = undefined;
-        _ = c.snprintf(&seq[0], 32, "\x1b[%d;%dH", orig_row, orig_col);
+        _ = @call(.{}, c.snprintf, .{ &seq[0], 32, "\x1b[%d;%dH", orig_row, orig_col });
         if (c.write(ofd, &seq[0], c.strlen(&seq[0])) == -1) {
             // Can't recover...
         }
@@ -609,30 +609,28 @@ fn getWindowSize(ifd: i32, ofd: i32, rows: *u32, cols: *u32) !void {
 // }
 
 /// Maps syntax highlight token types to terminal colors.
-fn editorSyntaxToColor(hl: i32) i32
-{
-    return switch (hl)
-    {
+fn editorSyntaxToColor(hl: i32) i32 {
+    return switch (hl) {
         // cyan
         HL_COMMENT, HL_MLCOMMENT => 36,
 
         // yellow
-    HL_KEYWORD1 =>  33,
+        HL_KEYWORD1 => 33,
 
-     // green
-    HL_KEYWORD2 => 32,
+        // green
+        HL_KEYWORD2 => 32,
 
-     // magenta
-    HL_STRING =>35,
+        // magenta
+        HL_STRING => 35,
 
-     // red
-    HL_NUMBER =>31,
+        // red
+        HL_NUMBER => 31,
 
-     // blu
-    HL_MATCH=>34,
+        // blu
+        HL_MATCH => 34,
 
-     // white
-    else =>37,
+        // white
+        else => 37,
     };
 }
 
@@ -1027,12 +1025,12 @@ fn editorInsertNewline() void {
 //     return 1;
 // }
 
-// // ============================= Terminal update ============================
+// ============================= Terminal update ============================
 
-// // We define a very simple "append buffer" structure, that is an heap
-// // allocated string where we can append to. This is useful in order to
-// // write all the escape sequences in a buffer and flush them to the standard
-// // output in a single call, to avoid flickering effects.
+// We define a very simple "append buffer" structure, that is an heap
+// allocated string where we can append to. This is useful in order to
+// write all the escape sequences in a buffer and flush them to the standard
+// output in a single call, to avoid flickering effects.
 
 const Abuf = std.ArrayList(u8);
 
@@ -1059,76 +1057,35 @@ fn editorRefreshScreen() void {
     ab.appendSlice("\x1b[H") catch unreachable;
 
     for (E.rows()) |r| {
-
-        //     int y;
-        //     for (y = 0; y < E.screenrows; y++)
-        //     {
-        //         int filerow = E.rowoff + y;
-
-        //         if (filerow >= E.numrows)
-        //         {
-        //             if (E.numrows == 0 && y == E.screenrows / 3)
-        //             {
-        //                 char welcome[80];
-        //                 int welcomelen = snprintf(welcome, sizeof(welcome),
-        //                                           "Kilo editor -- verison %s\x1b[0K\r\n", KILO_VERSION);
-        //                 int padding = (E.screencols - welcomelen) / 2;
-        //                 if (padding)
-        //                 {
-        //                     abAppend(&ab, "~", 1);
-        //                     padding--;
-        //                 }
-        //                 while (padding--)
-        //                     abAppend(&ab, " ", 1);
-        //                 abAppend(&ab, welcome, welcomelen);
-        //             }
-        //             else
-        //             {
-        //                 abAppend(&ab, "~\x1b[0K\r\n", 7);
-        //             }
-        //             continue;
-        //         }
-
-        //         r = &E.row[filerow];
-
         var len: u32 = r.rsize - E.coloff;
         var current_color: i32 = -1;
-        if (len > 0)
-        {
-            if (len > E.screencols){
+        if (len > 0) {
+            if (len > E.screencols) {
                 len = E.screencols;
             }
             var p = r.render.items[E.coloff..];
             var hl = r.hl.items[E.coloff..];
             var j: u32 = 0;
-            while(j<len):(j+=1)
-            {
-                if (hl[j] == HL_NONPRINT)
-                {
+            while (j < len) : (j += 1) {
+                if (hl[j] == HL_NONPRINT) {
                     ab.appendSlice("\x1b[7m") catch unreachable;
                     const sym = if (p[j] <= 26)
-                        '@' + p[j]                    
+                        '@' + p[j]
                     else
                         '?';
-                    
+
                     ab.append(sym) catch unreachable;
                     ab.appendSlice("\x1b[0m") catch unreachable;
-                }
-                else if (hl[j] == HL_NORMAL)
-                {
-                    if (current_color != -1)
-                    {
+                } else if (hl[j] == HL_NORMAL) {
+                    if (current_color != -1) {
                         ab.appendSlice("\x1b[39m") catch unreachable;
                         current_color = -1;
                     }
                     ab.append(p[j]) catch unreachable;
-                }
-                else
-                {
+                } else {
                     const color = editorSyntaxToColor(hl[j]);
-                    if (color != current_color)
-                    {
-                        var buf:[16]u8 = undefined;
+                    if (color != current_color) {
+                        var buf: [16]u8 = undefined;
                         const clen = @intCast(u32, c.snprintf(&buf[0], buf.len, "\x1b[%dm", color));
                         current_color = color;
                         ab.appendSlice(buf[0..clen]) catch unreachable;
@@ -1142,43 +1099,58 @@ fn editorRefreshScreen() void {
         ab.appendSlice("\r\n") catch unreachable;
     }
 
-    //     // Create a two rows status. First row:
+    var y = E.row.items.len;
+    while (y < E.screenrows) : (y += 1) {
+        if (E.row.items.len == 0 and y == E.screenrows / 3) {
+            var welcome: [80]u8 = undefined;
+            const welcomelen = @intCast(u32, @call(.{}, c.snprintf, .{ &welcome[0], welcome.len, "Kilo editor -- verison %s\x1b[0K\r\n", KILO_VERSION }));
+            var padding = (E.screencols - welcomelen) / 2;
+            if (padding > 0) {
+                ab.append('~') catch unreachable;
+                padding -= 1;
+            }
+            while (padding > 0) : (padding -= 1) {
+                ab.append(' ') catch unreachable;
+            }
+            ab.appendSlice(welcome[0..welcomelen]) catch unreachable;
+        } else {
+            ab.appendSlice("~\x1b[0K\r\n") catch unreachable;
+        }
+    }
 
-    //     abAppend(&ab, "\x1b[0K", 4);
-    //     abAppend(&ab, "\x1b[7m", 4);
-    //     char status[80], rstatus[80];
-    //     int len = snprintf(status, sizeof(status), "%.20s - %d lines %s",
-    //                        E.filename, E.numrows, E.dirty ? "(modified)" : "");
-    //     int rlen = snprintf(rstatus, sizeof(rstatus),
-    //                         "%d/%d", E.rowoff + E.cy + 1, E.numrows);
-    //     if (len > E.screencols)
-    //         len = E.screencols;
-    //     abAppend(&ab, status, len);
-    //     while (len < E.screencols)
-    //     {
-    //         if (E.screencols - len == rlen)
-    //         {
-    //             abAppend(&ab, rstatus, rlen);
-    //             break;
-    //         }
-    //         else
-    //         {
-    //             abAppend(&ab, " ", 1);
-    //             len++;
-    //         }
-    //     }
-    //     abAppend(&ab, "\x1b[0m\r\n", 6);
+    // Create a two rows status. First row:
+    ab.appendSlice("\x1b[0K") catch unreachable;
+    ab.appendSlice("\x1b[7m") catch unreachable;
 
-    //     // Second row depends on E.statusmsg and the status message update time.
+    var status: [80]u8 = undefined;
+    var rstatus: [80]u8 = undefined;
+    const modified: [:0]const u8 = if (E.dirty) "(modified)" else "";
+    var len = @intCast(u32, @call(.{}, c.snprintf, .{ &status, status.len, "%.20s - %d lines %s", E.filename, E.row.items.len, &modified[0] }));
+    const rlen = @intCast(u32, @call(.{}, c.snprintf, .{ &rstatus, rstatus.len, "%d/%d", @intCast(i32, E.rowoff) + E.cy + 1, E.row.items.len }));
+    if (len > E.screencols)
+        len = E.screencols;
+    ab.appendSlice(status[0..len]) catch unreachable;
+    while (len < E.screencols) {
+        if (E.screencols - len == rlen) {
+            ab.appendSlice(rstatus[0..rlen]) catch unreachable;
+            break;
+        } else {
+            ab.append(' ') catch unreachable;
+            len += 1;
+        }
+    }
+    ab.appendSlice("\x1b[0m\r\n") catch unreachable;
 
-    //     abAppend(&ab, "\x1b[0K", 4);
-    //     int msglen = strlen(E.statusmsg);
-    //     if (msglen && time(null) - E.statusmsg_time < 5)
-    //         abAppend(&ab, E.statusmsg, msglen <= E.screencols ? msglen : E.screencols);
+    // Second row depends on E.statusmsg and the status message update time.
 
-    //     // Put cursor at its current position. Note that the horizontal position
-    //     // at which the cursor is displayed may be different compared to 'E.cx'
-    //     // because of TABs.
+    ab.appendSlice("\x1b[0K") catch unreachable;
+    const msglen = c.strlen(&E.statusmsg[0]);
+    if (msglen != 0 and c.time(null) - E.statusmsg_time < 5)
+        ab.appendSlice(E.statusmsg[0..std.math.min(msglen, E.screencols)]) catch unreachable;
+
+    // Put cursor at its current position. Note that the horizontal position
+    // at which the cursor is displayed may be different compared to 'E.cx'
+    // because of TABs.
 
     //     int j;
     //     int cx = 1;
@@ -1194,7 +1166,7 @@ fn editorRefreshScreen() void {
     //         }
     //     }
     //     snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, cx);
-    //     abAppend(&ab, buf, strlen(buf));
+    //     ab.append(buf, strlen(buf));
 
 }
 
