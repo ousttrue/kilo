@@ -99,34 +99,18 @@ const Erow = struct {
         // Create a version of the row we can directly print on the screen,
         // respecting tabs, substituting non printable characters with '?'.
 
-        var tabs: u32 = 0;
-        for (chars) |ch| {
-            if (ch == @enumToInt(KEY_ACTION.TAB))
-                tabs += 1;
-        }
-
-        const allocsize = chars.len + tabs * 8;
-        if (allocsize > std.math.maxInt(c_uint)) {
-            @panic("Some line of the edited file is too long for kilo\n");
-        }
-
-        var render = try a.allocSentinel(u8, allocsize, 0);
-        var idx: u32 = 0;
+        var buffer = std.ArrayList(u8).init(a);
         for (chars) |ch| {
             if (ch == @enumToInt(KEY_ACTION.TAB)) {
-                render[idx] = ' ';
-                idx += 1;
-                while ((idx + 1) % 8 != 0) {
-                    render[idx] = ' ';
-                    idx += 1;
+                try buffer.append(' ');
+                while ((buffer.items.len + 1) % 8 != 0) {
+                    try buffer.append(' ');
                 }
             } else {
-                render[idx] = ch;
-                idx += 1;
+                try buffer.append(ch);
             }
         }
-
-        return render;
+        return buffer.toOwnedSlice();
     }
 
     /// Set every byte of row.hl (that corresponds to every character in the line)
@@ -481,7 +465,7 @@ const EditorConfig = struct {
             if (linelen == -1) {
                 break;
             }
-            c.free(line);
+            defer c.free(line);
             while (linelen > 0 and (line[@intCast(u32, linelen) - 1] == '\n' or line[@intCast(u32, linelen) - 1] == '\r')) {
                 linelen -= 1;
                 line[@intCast(u32, linelen)] = 0;
