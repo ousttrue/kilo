@@ -66,19 +66,38 @@ const Erow = struct {
     const Self = @This();
 
     /// Row index in the file, zero-based.
-    idx: i32,
+    idx: u32,
     /// Size of the row, excluding the null term.
     size: u32,
     /// Size of the rendered row.
-    rsize: u32,
+    rsize: u32 = 0,
     /// Row content.
-    chars: std.ArrayList(u8),
+    chars: []const u8,
     /// Row content "rendered" for screen (for TABs).
-    render: std.ArrayList(u8),
+    render: ?[]const u8 = null,
     /// Syntax highlight type for each character in render.
-    hl: std.ArrayList(u8),
+    hl: ?[]const u8 = null,
     /// Row had open comment at end in last syntax highlight check.
-    hl_oc: i32,
+    hl_oc: i32 = 0,
+
+    fn init(a: std.mem.Allocator, idx: usize, chars: []const u8) Self {
+        // E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
+        // if (at != E.numrows)
+        // {
+        //     memmove(E.row + at + 1, E.row + at, sizeof(E.row[0]) * (E.numrows - at));
+        //     for (int j = at + 1; j <= E.numrows; j++)
+        //         E.row[j].idx++;
+        // }
+        // E.row[at].size = len;
+        // E.row[at].chars = malloc(len + 1);
+        // memcpy(E.row[at].chars, s, len + 1);
+
+        return Self{
+            .chars = a.dupe(u8, chars) catch unreachable,
+            .size = @intCast(u32, chars.len),
+            .idx = @intCast(u32, idx),
+        };
+    }
 
     fn draw(self: Self, ab: *std.ArrayList(u8), coloff: u32, screencols: u32) void {
         if (self.rsize <= coloff) {
@@ -90,8 +109,8 @@ const Erow = struct {
         if (len > screencols) {
             len = screencols;
         }
-        var p = self.render.items[coloff..];
-        var hl = self.hl.items[coloff..];
+        var p = self.render.?[coloff..];
+        var hl = self.hl.?[coloff..];
         var j: u32 = 0;
         while (j < len) : (j += 1) {
             if (hl[j] == HL_NONPRINT) {
@@ -149,7 +168,7 @@ const EditorConfig = struct {
     /// File modified but not saved.
     dirty: bool = false,
     /// Currently open filename
-    filename: ?*u8 = null,
+    filename: ?[:0]u8 = null,
     statusmsg: [80]u8 = undefined,
     statusmsg_time: c.time_t = undefined,
     /// Current syntax highlight, or null.
@@ -195,33 +214,51 @@ const EditorConfig = struct {
 
     /// Insert a row at the specified position, shifting the other rows on the bottom
     /// if required.
-    fn editorInsertRow(self: *Self, at: i32, s:[]const u8)void
-    {
-        if (at > E.numrows)
+    fn editorInsertRow(self: *Self, at: usize, s: []const u8) void {
+        if (at > self.row.items.len)
             return;
-        self.row.insert(at, Erow{
-            .chars = s,
-        });
-        // E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
-        // if (at != E.numrows)
-        // {
-        //     memmove(E.row + at + 1, E.row + at, sizeof(E.row[0]) * (E.numrows - at));
-        //     for (int j = at + 1; j <= E.numrows; j++)
-        //         E.row[j].idx++;
-        // }
-        // E.row[at].size = len;
-        // E.row[at].chars = malloc(len + 1);
-        // memcpy(E.row[at].chars, s, len + 1);
-        // E.row[at].hl = null;
-        // E.row[at].hl_oc = 0;
-        // E.row[at].render = null;
-        // E.row[at].rsize = 0;
-        // E.row[at].idx = at;
+        self.row.insert(at, Erow.init(allocator, at, s)) catch unreachable;
+        self.dirty = true;
         // editorUpdateRow(E.row + at);
-        // E.numrows+=1;
-        // E.dirty+=1;
     }
 
+    fn editorAppendRow(self: *Self, line: []const u8) void {
+        self.editorInsertRow(self.row.items.len, line);
+    }
+
+    // Load the specified program in the editor memory and returns 0 on success
+    // or 1 on error.
+    fn editorOpen(self: *Self, path: []const u8) !void {
+        if (self.filename) |filename| {
+            allocator.free(filename);
+        }
+        self.dirty = false;
+        const filename = try allocator.dupeZ(u8, path);
+        const fp = c.fopen(&filename[0], "r");
+        if (fp == null) {
+            // if (c.errno != c.ENOENT) {
+            //     c.perror("Opening file");
+            //     c.exit(1);
+            // }
+            return error.fopen;
+        }
+        defer _ = c.fclose(fp);
+
+        while (true) {
+            var line: [*c]u8 = undefined;
+            var linecap: usize = 0;
+            var linelen = c.getline(&line, &linecap, fp);
+            if (linelen == -1) {
+                break;
+            }
+            c.free(line);
+            while (linelen > 0 and (line[@intCast(u32, linelen) - 1] == '\n' or line[@intCast(u32, linelen) - 1] == '\r')) {
+                linelen -= 1;
+                line[@intCast(u32, linelen)] = 0;
+            }
+            self.editorAppendRow(line[0..@intCast(usize, linelen)]);
+        }
+    }
 };
 
 var E: EditorConfig = undefined;
@@ -793,7 +830,6 @@ fn editorSelectSyntaxHighlight(filename: []const u8) void {
 //     editorUpdateSyntax(row);
 // }
 
-
 // // Free row's heap allocated stuff.
 
 // void editorFreeRow(erow *row)
@@ -1025,45 +1061,6 @@ fn editorInsertNewline() void {
 //     E.dirty++;
 // }
 
-// // Load the specified program in the editor memory and returns 0 on success
-// // or 1 on error.
-
-// int editorOpen(char *filename)
-// {
-//     FILE *fp;
-
-//     E.dirty = 0;
-//     free(E.filename);
-//     size_t fnlen = strlen(filename) + 1;
-//     E.filename = malloc(fnlen);
-//     memcpy(E.filename, filename, fnlen);
-
-//     fp = fopen(filename, "r");
-//     if (!fp)
-//     {
-//         if (errno != ENOENT)
-//         {
-//             perror("Opening file");
-//             exit(1);
-//         }
-//         return 1;
-//     }
-
-//     char *line = null;
-//     size_t linecap = 0;
-//     ssize_t linelen;
-//     while ((linelen = getline(&line, &linecap, fp)) != -1)
-//     {
-//         if (linelen && (line[linelen - 1] == '\n' || line[linelen - 1] == '\r'))
-//             line[--linelen] = '\0';
-//         editorInsertRow(E.numrows, line, linelen);
-//     }
-//     free(line);
-//     fclose(fp);
-//     E.dirty = 0;
-//     return 0;
-// }
-
 // // Save the current file on disk. Return 0 on success, 1 on error.
 
 // int editorSave(void)
@@ -1160,7 +1157,7 @@ fn editorRefreshScreen() void {
     var status: [80]u8 = undefined;
     var rstatus: [80]u8 = undefined;
     const modified: [:0]const u8 = if (E.dirty) "(modified)" else "";
-    var len = @intCast(u32, @call(.{}, c.snprintf, .{ &status, status.len, "%.20s - %d lines %s", E.filename, E.row.items.len, &modified[0] }));
+    var len = @intCast(u32, @call(.{}, c.snprintf, .{ &status, status.len, "%.20s - %d lines %s", &E.filename.?[0], E.row.items.len, &modified[0] }));
     const rlen = @intCast(u32, @call(.{}, c.snprintf, .{ &rstatus, rstatus.len, "%d/%d", E.rowoff + E.cy + 1, E.row.items.len }));
     if (len > E.screencols)
         len = E.screencols;
@@ -1533,7 +1530,7 @@ pub fn main() anyerror!void {
     updateWindowSize();
     _ = c.signal(c.SIGWINCH, handleSigWinCh);
     editorSelectSyntaxHighlight(arg);
-    //     editorOpen(argv[1]);
+    try E.editorOpen(arg);
     try enableRawMode(c.STDIN_FILENO);
     defer disableRawMode(c.STDIN_FILENO);
 
