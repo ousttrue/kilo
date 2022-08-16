@@ -1601,9 +1601,8 @@ pub fn main() anyerror!void {
     //     editorOpen(argv[1]);
     try enableRawMode(c.STDIN_FILENO);
     editorSetStatusMessage("HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find", .{});
-    //     while (1)
-    //     {
-    //         editorRefreshScreen();
-    //         editorProcessKeypress(STDIN_FILENO);
-    //     }
+    while (true) {
+        try editorRefreshScreen();
+        // editorProcessKeypress(STDIN_FILENO);
+    }
 }
