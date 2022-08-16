@@ -66,15 +66,15 @@ var allocator: std.mem.Allocator = undefined;
 // #define HL_NUMBER 7
 // #define HL_MATCH 8 // Search match.
 
-// #define HL_HIGHLIGHT_STRINGS (1 << 0)
-// #define HL_HIGHLIGHT_NUMBERS (1 << 1)
+const HL_HIGHLIGHT_STRINGS = (1 << 0);
+const HL_HIGHLIGHT_NUMBERS = (1 << 1);
 
 const EditorSyntax = struct {
-    filematch: **u8,
-    keywords: **u8,
-    singleline_comment_start: [2]u8,
-    multiline_comment_start: [3]u8,
-    multiline_comment_end: [3]u8,
+    filematch: []const []const u8,
+    keywords: []const []const u8,
+    singleline_comment_start: []const u8,
+    multiline_comment_start: []const u8,
+    multiline_comment_end: []const u8,
     flags: i32,
 };
 
@@ -127,7 +127,7 @@ const EditorConfig = struct {
     statusmsg: [80]u8,
     statusmsg_time: c.time_t,
     /// Current syntax highlight, or null.
-    syntax: ?*EditorSyntax,
+    syntax: ?*const EditorSyntax,
 };
 
 var E: EditorConfig = undefined;
@@ -161,57 +161,58 @@ const KEY_ACTION = enum(u32) {
 
 // void editorSetStatusMessage(const char *fmt, ...);
 
-// // =========================== Syntax highlights DB =========================
-// // In order to add a new syntax, define two arrays with a list of file name
-// // matches and keywords. The file name matches are used in order to match
-// // a given syntax with a given file name: if a match pattern starts with a
-// // dot, it is matched as the last past of the filename, for example ".c".
-// // Otherwise the pattern is just searched inside the filenme, like "Makefile").
-// // The list of keywords to highlight is just a list of words, however if they
-// // a trailing '|' character is added at the end, they are highlighted in
-// // a different color, so that you can have two different sets of keywords.
-// // Finally add a stanza in the HLDB global variable with two two arrays
-// // of strings, and a set of flags in order to enable highlighting of
-// // comments and numbers.
-// // The characters for single and multi line comments must be exactly two
-// // and must be provided as well (see the C language example).
-// // There is no support to highlight patterns currently.
+// =========================== Syntax highlights DB =========================
+// In order to add a new syntax, define two arrays with a list of file name
+// matches and keywords. The file name matches are used in order to match
+// a given syntax with a given file name: if a match pattern starts with a
+// dot, it is matched as the last past of the filename, for example ".c".
+// Otherwise the pattern is just searched inside the filenme, like "Makefile").
+// The list of keywords to highlight is just a list of words, however if they
+// a trailing '|' character is added at the end, they are highlighted in
+// a different color, so that you can have two different sets of keywords.
+// Finally add a stanza in the HLDB global variable with two two arrays
+// of strings, and a set of flags in order to enable highlighting of
+// comments and numbers.
+// The characters for single and multi line comments must be exactly two
+// and must be provided as well (see the C language example).
+// There is no support to highlight patterns currently.
 
-// // C / C++
+// C / C++
+const C_HL_extensions = [_][]const u8{ ".c", ".h", ".cpp", ".hpp", ".cc" };
+const C_HL_keywords = [_][]const u8{
+    // C Keywords
+    "auto",          "break",       "case",      "continue",  "default",      "do",        "else",   "enum",
+    "extern",        "for",         "goto",      "if",        "register",     "return",    "sizeof", "static",
+    "struct",        "switch",      "typedef",   "union",     "volatile",     "while",     "null",
 
-// char *C_HL_extensions[] = {".c", ".h", ".cpp", ".hpp", ".cc", null};
-// char *C_HL_keywords[] = {
-//     // C Keywords
+    // C++ Keywords
+      "alignas",
+    "alignof",       "and",         "and_eq",    "asm",       "bitand",       "bitor",     "class",  "compl",
+    "constexpr",     "const_cast",  "deltype",   "delete",    "dynamic_cast", "explicit",  "export", "false",
+    "friend",        "inline",      "mutable",   "namespace", "new",          "noexcept",  "not",    "not_eq",
+    "nullptr",       "operator",    "or",        "or_eq",     "private",      "protected", "public", "reinterpret_cast",
+    "static_assert", "static_cast", "template",  "this",      "thread_local", "throw",     "true",   "try",
+    "typeid",        "typename",    "virtual",   "xor",       "xor_eq",
 
-//     "auto", "break", "case", "continue", "default", "do", "else", "enum",
-//     "extern", "for", "goto", "if", "register", "return", "sizeof", "static",
-//     "struct", "switch", "typedef", "union", "volatile", "while", "null",
+    // C types
+          "int|",      "long|",  "double|",
+    "float|",        "char|",       "unsigned|", "signed|",   "void|",        "short|",    "auto|",  "const|",
+    "bool|",
+};
 
-//     // C++ Keywords
-
-//     "alignas", "alignof", "and", "and_eq", "asm", "bitand", "bitor", "class",
-//     "compl", "constexpr", "const_cast", "deltype", "delete", "dynamic_cast",
-//     "explicit", "export", "false", "friend", "inline", "mutable", "namespace",
-//     "new", "noexcept", "not", "not_eq", "nullptr", "operator", "or", "or_eq",
-//     "private", "protected", "public", "reinterpret_cast", "static_assert",
-//     "static_cast", "template", "this", "thread_local", "throw", "true", "try",
-//     "typeid", "typename", "virtual", "xor", "xor_eq",
-
-//     // C types
-
-//     "int|", "long|", "double|", "float|", "char|", "unsigned|", "signed|",
-//     "void|", "short|", "auto|", "const|", "bool|", null};
-
-// // Here we define an array of syntax highlights by extensions, keywords,
-// // comments delimiters and flags.
-
-// struct editorSyntax HLDB[] = {
-//     {// C / C++
-
-//      C_HL_extensions,
-//      C_HL_keywords,
-//      "//", "/*", "*/",
-//      HL_HIGHLIGHT_STRINGS | HL_HIGHLIGHT_NUMBERS}};
+/// Here we define an array of syntax highlights by extensions, keywords,
+/// comments delimiters and flags.
+const HLDB = [_]EditorSyntax{
+    // C / C++
+    .{
+        .filematch = &C_HL_extensions,
+        .keywords = &C_HL_keywords,
+        .singleline_comment_start = "//",
+        .multiline_comment_start = "/*",
+        .multiline_comment_end = "*/",
+        .flags = HL_HIGHLIGHT_STRINGS | HL_HIGHLIGHT_NUMBERS,
+    },
+};
 
 // #define HLDB_ENTRIES (sizeof(HLDB) / sizeof(HLDB[0]))
 
@@ -668,31 +669,19 @@ fn getWindowSize(ifd: i32, ofd: i32, rows: *i32, cols: *i32) !void {
 //     }
 // }
 
-// // Select the syntax highlight scheme depending on the filename,
-// // setting it in the global state E.syntax.
-
-// void editorSelectSyntaxHighlight(char *filename)
-// {
-//     for (unsigned int j = 0; j < HLDB_ENTRIES; j++)
-//     {
-//         struct editorSyntax *s = HLDB + j;
-//         unsigned int i = 0;
-//         while (s->filematch[i])
-//         {
-//             char *p;
-//             int patlen = strlen(s->filematch[i]);
-//             if ((p = strstr(filename, s->filematch[i])) != null)
-//             {
-//                 if (s->filematch[i][0] != '.' || p[patlen] == '\0')
-//                 {
-//                     E.syntax = s;
-//                     return;
-//                 }
-//             }
-//             i++;
-//         }
-//     }
-// }
+/// Select the syntax highlight scheme depending on the filename,
+/// setting it in the global state E.syntax.
+fn editorSelectSyntaxHighlight(filename: []const u8) void {
+    _ = filename;
+    for (HLDB) |*s| {
+        for (s.filematch) |match| {
+            if (std.mem.endsWith(u8, filename, match)) {
+                E.syntax = s;
+                return;
+            }
+        }
+    }
+}
 
 // // ======================= Editor rows implementation =======================
 
@@ -1630,9 +1619,8 @@ pub fn main() anyerror!void {
         c.exit(1);
     };
 
-    _ = arg;
     initEditor();
-        // editorSelectSyntaxHighlight(argv[1]);
+    editorSelectSyntaxHighlight(arg);
     //     editorOpen(argv[1]);
     //     enableRawMode(STDIN_FILENO);
     //     editorSetStatusMessage(
