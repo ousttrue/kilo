@@ -72,23 +72,23 @@ const Erow = struct {
     /// Row content "rendered" for screen (for TABs).
     render: []const u8,
     /// Syntax highlight type for each character in render.
-    hl: []const u8,
+    hl: [] u8,
     /// Row had open comment at end in last syntax highlight check.
     hl_oc: i32 = 0,
 
-    fn init(a: std.mem.Allocator, idx: usize, chars: []const u8, syntax: ?*const EditorSyntax) Self {
+    fn init(a: std.mem.Allocator, idx: usize, chars: []const u8) Self {
         var self = Self{
             .idx = @intCast(u32, idx),
             .chars = a.dupe(u8, chars) catch unreachable,
             .render = allocRender(allocator, chars) catch unreachable,
             .hl = undefined,
         };
-        self.hl = try allocSyntax(allocator, self.render, syntax);
+        self.hl = allocator.alloc(u8, self.render.len) catch unreachable;
         return self;
     }
 
     /// Free row's heap allocated stuff.
-    fn editorFreeRow(self: Self) void {
+    fn deinit(self: Self) void {
         allocator.free(self.render);
         allocator.free(self.chars);
         allocator.free(self.hl);
@@ -131,11 +131,9 @@ const Erow = struct {
 
     /// Set every byte of row.hl (that corresponds to every character in the line)
     /// to the right syntax highlight type (HL_* defines).
-    fn allocSyntax(a: std.mem.Allocator, render: []const u8, syntax: ?*const EditorSyntax) ![]const u8 {
-        _ = a;
-        _ = render;
+    fn updateSyntax(self: *Self, syntax: ?*const EditorSyntax) void {
+        _ = self;
         _ = syntax;
-        unreachable;
         // if (E.syntax == null)
         //     return; // No syntax, everything is HL_NORMAL.
 
@@ -397,6 +395,10 @@ const EditorConfig = struct {
     }
 
     fn deinit(self: Self) void {
+        for(self.row.items)|*item|
+        {
+            item.deinit();
+        }
         self.row.deinit();
         if (self.filename) |filename| {
             allocator.free(filename);
@@ -436,7 +438,12 @@ const EditorConfig = struct {
     fn editorInsertRow(self: *Self, at: usize, s: []const u8) void {
         if (at > self.row.items.len)
             return;
-        self.row.insert(at, Erow.init(allocator, at, s, self.syntax)) catch unreachable;
+        self.row.insert(at, Erow.init(allocator, at, s)) catch unreachable;        
+        if (self.syntax) |syntax| {
+            self.row.items[at].updateSyntax(syntax);
+        } else {
+            std.mem.set(u8, self.row.items[at].hl, 0);
+        }
         self.dirty = true;
     }
 
