@@ -278,92 +278,69 @@ fn enableRawMode(fd: i32) !void {
     E.rawmode = true;
 }
 
-// // Read a key from the terminal put in raw mode, trying to handle
-// // escape sequences.
+/// Read a key from the terminal put in raw mode, trying to handle
+/// escape sequences.
+fn editorReadKey(fd: i32) void {
+    var nread: c_int = undefined;
+    var ch: u8 = undefined;
+    while (true) {
+        nread = c.read(fd, &ch, 1);
+        if (nread != 0) {
+            break;
+        }
+    }
+    if (nread == -1)
+        c.exit(1);
 
-// int editorReadKey(int fd)
-// {
-//     int nread;
-//     char c, seq[3];
-//     while ((nread = read(fd, &c, 1)) == 0)
-//         ;
-//     if (nread == -1)
-//         exit(1);
+    while (true) {
+        switch (c) {
+            // escape sequence
+            KEY_ACTION.ESC => {
+                // If this is just an ESC, we'll timeout here.
+                var seq: [3]u8 = undefined;
+                if (c.read(fd, &seq[0], 1) == 0)
+                    return KEY_ACTION.ESC;
+                if (c.read(fd, &seq[0] + 1, 1) == 0)
+                    return KEY_ACTION.ESC;
 
-//     while (1)
-//     {
-//         switch (c)
-//         {
-//         case ESC: // escape sequence
+                // ESC [ sequences.
 
-//             // If this is just an ESC, we'll timeout here.
+                if (seq[0] == '[') {
+                    if (seq[1] >= '0' and seq[1] <= '9') {
+                        // Extended escape, read additional byte.
 
-//             if (read(fd, seq, 1) == 0)
-//                 return ESC;
-//             if (read(fd, seq + 1, 1) == 0)
-//                 return ESC;
-
-//             // ESC [ sequences.
-
-//             if (seq[0] == '[')
-//             {
-//                 if (seq[1] >= '0' && seq[1] <= '9')
-//                 {
-//                     // Extended escape, read additional byte.
-
-//                     if (read(fd, seq + 2, 1) == 0)
-//                         return ESC;
-//                     if (seq[2] == '~')
-//                     {
-//                         switch (seq[1])
-//                         {
-//                         case '3':
-//                             return DEL_KEY;
-//                         case '5':
-//                             return PAGE_UP;
-//                         case '6':
-//                             return PAGE_DOWN;
-//                         }
-//                     }
-//                 }
-//                 else
-//                 {
-//                     switch (seq[1])
-//                     {
-//                     case 'A':
-//                         return ARROW_UP;
-//                     case 'B':
-//                         return ARROW_DOWN;
-//                     case 'C':
-//                         return ARROW_RIGHT;
-//                     case 'D':
-//                         return ARROW_LEFT;
-//                     case 'H':
-//                         return HOME_KEY;
-//                     case 'F':
-//                         return END_KEY;
-//                     }
-//                 }
-//             }
-
-//             // ESC O sequences.
-
-//             else if (seq[0] == 'O')
-//             {
-//                 switch (seq[1])
-//                 {
-//                 case 'H':
-//                     return HOME_KEY;
-//                 case 'F':
-//                     return END_KEY;
-//                 }
-//             }
-//             break;
-//         default:
-//             return c;
-//         }
-//     }
-// }
+                        if (c.read(fd, &seq[2], 1) == 0)
+                            return KEY_ACTION.ESC;
+                        if (seq[2] == '~') {
+                            switch (seq[1]) {
+                                '3' => return KEY_ACTION.DEL_KEY,
+                                '5' => return KEY_ACTION.PAGE_UP,
+                                '6' => return KEY_ACTION.PAGE_DOWN,
+                            }
+                        }
+                    } else {
+                        switch (seq[1]) {
+                            'A' => return KEY_ACTION.ARROW_UP,
+                            'B' => return KEY_ACTION.ARROW_DOWN,
+                            'C' => return KEY_ACTION.ARROW_RIGHT,
+                            'D' => return KEY_ACTION.ARROW_LEFT,
+                            'H' => return KEY_ACTION.HOME_KEY,
+                            'F' => return KEY_ACTION.END_KEY,
+                        }
+                    }
+                }
+                // ESC O sequences.
+                else if (seq[0] == 'O') {
+                    switch (seq[1]) {
+                        'H' => return KEY_ACTION.HOME_KEY,
+                        'F' => return KEY_ACTION.END_KEY,
+                    }
+                }
+            },
+            else => return c,
+        }
+    }
+}
 
 /// Use the ESC [6n escape sequence to query the horizontal cursor position
 /// and return it. On error -1 is returned, on success the position of the
@@ -1471,90 +1448,93 @@ fn editorSetStatusMessage(fmt: [:0]const u8, args: anytype) void {
 // // Process events arriving from the standard input, which is, the user
 // // is typing stuff on the terminal.
 
-// #define KILO_QUIT_TIMES 3
-// void editorProcessKeypress(int fd)
-// {
-//     // When the file is modified, requires Ctrl-q to be pressed N times
-//     // before actually quitting.
+const KILO_QUIT_TIMES = 3;
+fn editorProcessKeypress(fd: i32) void {
+    // When the file is modified, requires Ctrl-q to be pressed N times
+    // before actually quitting.
 
-//     static int quit_times = KILO_QUIT_TIMES;
+    const S = struct {
+        var quit_times: i32 = KILO_QUIT_TIMES;
+    };
+    _ = S;
 
-//     int c = editorReadKey(fd);
-//     switch (c)
-//     {
-//     case ENTER: // Enter
+    const ch = editorReadKey(fd);
+    _ = ch;
+    //     switch (c)
+    //     {
+    //     case ENTER: // Enter
 
-//         editorInsertNewline();
-//         break;
-//     case CTRL_C: // Ctrl-c
+    //         editorInsertNewline();a
+    //         break;
+    //     case CTRL_C: // Ctrl-c
 
-//         // We ignore ctrl-c, it can't be so simple to lose the changes
-//         // to the edited file.
+    //         // We ignore ctrl-c, it can't be so simple to lose the changes
+    //         // to the edited file.
 
-//         break;
-//     case CTRL_Q: // Ctrl-q
+    //         break;
+    //     case CTRL_Q: // Ctrl-q
 
-//         // Quit if the file was already saved.
+    //         // Quit if the file was already saved.
 
-//         if (E.dirty && quit_times)
-//         {
-//             editorSetStatusMessage("WARNING!!! File has unsaved changes. "
-//                                    "Press Ctrl-Q %d more times to quit.",
-//                                    quit_times);
-//             quit_times--;
-//             return;
-//         }
-//         exit(0);
-//         break;
-//     case CTRL_S: // Ctrl-s
+    //         if (E.dirty && quit_times)
+    //         {
+    //             editorSetStatusMessage("WARNING!!! File has unsaved changes. "
+    //                                    "Press Ctrl-Q %d more times to quit.",
+    //                                    quit_times);
+    //             quit_times--;
+    //             return;
+    //         }
+    //         exit(0);
+    //         break;
+    //     case CTRL_S: // Ctrl-s
 
-//         editorSave();
-//         break;
-//     case CTRL_F:
-//         editorFind(fd);
-//         break;
-//     case BACKSPACE: // Backspace
+    //         editorSave();
+    //         break;
+    //     case CTRL_F:
+    //         editorFind(fd);
+    //         break;
+    //     case BACKSPACE: // Backspace
 
-//     case CTRL_H: // Ctrl-h
+    //     case CTRL_H: // Ctrl-h
 
-//     case DEL_KEY:
-//         editorDelChar();
-//         break;
-//     case PAGE_UP:
-//     case PAGE_DOWN:
-//         if (c == PAGE_UP && E.cy != 0)
-//             E.cy = 0;
-//         else if (c == PAGE_DOWN && E.cy != E.screenrows - 1)
-//             E.cy = E.screenrows - 1;
-//         {
-//             int times = E.screenrows;
-//             while (times--)
-//                 editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
-//         }
-//         break;
+    //     case DEL_KEY:
+    //         editorDelChar();
+    //         break;
+    //     case PAGE_UP:
+    //     case PAGE_DOWN:
+    //         if (c == PAGE_UP && E.cy != 0)
+    //             E.cy = 0;
+    //         else if (c == PAGE_DOWN && E.cy != E.screenrows - 1)
+    //             E.cy = E.screenrows - 1;
+    //         {
+    //             int times = E.screenrows;
+    //             while (times--)
+    //                 editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+    //         }
+    //         break;
 
-//     case ARROW_UP:
-//     case ARROW_DOWN:
-//     case ARROW_LEFT:
-//     case ARROW_RIGHT:
-//         editorMoveCursor(c);
-//         break;
-//     case CTRL_L: // ctrl+l, clear screen
+    //     case ARROW_UP:
+    //     case ARROW_DOWN:
+    //     case ARROW_LEFT:
+    //     case ARROW_RIGHT:
+    //         editorMoveCursor(c);
+    //         break;
+    //     case CTRL_L: // ctrl+l, clear screen
 
-//         // Just refresht the line as side effect.
+    //         // Just refresht the line as side effect.
 
-//         break;
-//     case ESC:
-//         // Nothing to do for ESC in this mode.
+    //         break;
+    //     case ESC:
+    //         // Nothing to do for ESC in this mode.
 
-//         break;
-//     default:
-//         editorInsertChar(c);
-//         break;
-//     }
+    //         break;
+    //     default:
+    //         editorInsertChar(c);
+    //         break;
+    //     }
 
-//     quit_times = KILO_QUIT_TIMES; // Reset it to the original value.
-// }
+    //     quit_times = KILO_QUIT_TIMES; // Reset it to the original value.
+}
 
 // int editorFileWasModified(void)
 // {
