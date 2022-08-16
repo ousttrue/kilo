@@ -132,7 +132,7 @@ const EditorConfig = struct {
 
 var E: EditorConfig = undefined;
 
-const KEY_ACTION = enum(u32) {
+const KEY_ACTION = enum(i32) {
     KEY_NULL = 0, // null
     CTRL_C = 3, // Ctrl-c
     CTRL_D = 4, // Ctrl-d
@@ -280,8 +280,8 @@ fn enableRawMode(fd: i32) !void {
 
 /// Read a key from the terminal put in raw mode, trying to handle
 /// escape sequences.
-fn editorReadKey(fd: i32) void {
-    var nread: c_int = undefined;
+fn editorReadKey(fd: i32) KEY_ACTION {
+    var nread: isize = undefined;
     var ch: u8 = undefined;
     while (true) {
         nread = c.read(fd, &ch, 1);
@@ -293,14 +293,14 @@ fn editorReadKey(fd: i32) void {
         c.exit(1);
 
     while (true) {
-        switch (c) {
+        switch (@intToEnum(KEY_ACTION, ch)) {
             // escape sequence
             KEY_ACTION.ESC => {
                 // If this is just an ESC, we'll timeout here.
                 var seq: [3]u8 = undefined;
                 if (c.read(fd, &seq[0], 1) == 0)
                     return KEY_ACTION.ESC;
-                if (c.read(fd, &seq[0] + 1, 1) == 0)
+                if (c.read(fd, &seq[1], 1) == 0)
                     return KEY_ACTION.ESC;
 
                 // ESC [ sequences.
@@ -316,6 +316,7 @@ fn editorReadKey(fd: i32) void {
                                 '3' => return KEY_ACTION.DEL_KEY,
                                 '5' => return KEY_ACTION.PAGE_UP,
                                 '6' => return KEY_ACTION.PAGE_DOWN,
+                                else => unreachable,
                             }
                         }
                     } else {
@@ -326,6 +327,7 @@ fn editorReadKey(fd: i32) void {
                             'D' => return KEY_ACTION.ARROW_LEFT,
                             'H' => return KEY_ACTION.HOME_KEY,
                             'F' => return KEY_ACTION.END_KEY,
+                            else => unreachable,
                         }
                     }
                 }
@@ -334,10 +336,11 @@ fn editorReadKey(fd: i32) void {
                     switch (seq[1]) {
                         'H' => return KEY_ACTION.HOME_KEY,
                         'F' => return KEY_ACTION.END_KEY,
+                        else => unreachable,
                     }
                 }
             },
-            else => return c,
+            else => return @intToEnum(KEY_ACTION, ch),
         }
     }
 }
@@ -865,55 +868,53 @@ fn editorSelectSyntaxHighlight(filename: []const u8) void {
 //     E.dirty++;
 // }
 
-// // Inserting a newline is slightly complex as we have to handle inserting a
-// // newline in the middle of a line, splitting the line as needed.
+/// Inserting a newline is slightly complex as we have to handle inserting a
+/// newline in the middle of a line, splitting the line as needed.
+fn editorInsertNewline() void {
+    //     int filerow = E.rowoff + E.cy;
+    //     int filecol = E.coloff + E.cx;
+    //     erow *row = (filerow >= E.numrows) ? null : &E.row[filerow];
 
-// void editorInsertNewline(void)
-// {
-//     int filerow = E.rowoff + E.cy;
-//     int filecol = E.coloff + E.cx;
-//     erow *row = (filerow >= E.numrows) ? null : &E.row[filerow];
+    //     if (!row)
+    //     {
+    //         if (filerow == E.numrows)
+    //         {
+    //             editorInsertRow(filerow, "", 0);
+    //             goto fixcursor;
+    //         }
+    //         return;
+    //     }
+    //     // If the cursor is over the current line size, we want to conceptually
+    //     // think it's just over the last character.
 
-//     if (!row)
-//     {
-//         if (filerow == E.numrows)
-//         {
-//             editorInsertRow(filerow, "", 0);
-//             goto fixcursor;
-//         }
-//         return;
-//     }
-//     // If the cursor is over the current line size, we want to conceptually
-//     // think it's just over the last character.
+    //     if (filecol >= row->size)
+    //         filecol = row->size;
+    //     if (filecol == 0)
+    //     {
+    //         editorInsertRow(filerow, "", 0);
+    //     }
+    //     else
+    //     {
+    //         // We are in the middle of a line. Split it between two rows.
 
-//     if (filecol >= row->size)
-//         filecol = row->size;
-//     if (filecol == 0)
-//     {
-//         editorInsertRow(filerow, "", 0);
-//     }
-//     else
-//     {
-//         // We are in the middle of a line. Split it between two rows.
-
-//         editorInsertRow(filerow + 1, row->chars + filecol, row->size - filecol);
-//         row = &E.row[filerow];
-//         row->chars[filecol] = '\0';
-//         row->size = filecol;
-//         editorUpdateRow(row);
-//     }
-// fixcursor:
-//     if (E.cy == E.screenrows - 1)
-//     {
-//         E.rowoff++;
-//     }
-//     else
-//     {
-//         E.cy++;
-//     }
-//     E.cx = 0;
-//     E.coloff = 0;
-// }
+    //         editorInsertRow(filerow + 1, row->chars + filecol, row->size - filecol);
+    //         row = &E.row[filerow];
+    //         row->chars[filecol] = '\0';
+    //         row->size = filecol;
+    //         editorUpdateRow(row);
+    //     }
+    // fixcursor:
+    //     if (E.cy == E.screenrows - 1)
+    //     {
+    //         E.rowoff++;
+    //     }
+    //     else
+    //     {
+    //         E.cy++;
+    //     }
+    //     E.cx = 0;
+    //     E.coloff = 0;
+}
 
 // // Delete the char at the current prompt position.
 
@@ -1045,7 +1046,13 @@ fn editorRefreshScreen() !void {
     //     erow *r;
     //     char buf[32];
     var ab = Abuf.init(allocator);
-    defer ab.deinit();
+    defer {
+        _ = c.write(c.STDOUT_FILENO, &ab.items[0], ab.items.len);
+        ab.deinit();
+    }
+    errdefer {
+        ab.deinit();
+    }
 
     // Hide cursor.
     try ab.appendSlice("\x1b[?25l");
@@ -1189,8 +1196,6 @@ fn editorRefreshScreen() !void {
     //     abAppend(&ab, buf, strlen(buf));
     //     abAppend(&ab, "\x1b[?25h", 6); // Show cursor.
 
-    //     write(STDOUT_FILENO, ab.b, ab.len);
-    //     abFree(&ab);
 }
 
 // // Set an editor status message for the second line of the status, at the
@@ -1456,84 +1461,82 @@ fn editorProcessKeypress(fd: i32) void {
     const S = struct {
         var quit_times: i32 = KILO_QUIT_TIMES;
     };
-    _ = S;
 
     const ch = editorReadKey(fd);
-    _ = ch;
-    //     switch (c)
-    //     {
-    //     case ENTER: // Enter
+    switch (ch) {
+        // Enter
+        KEY_ACTION.ENTER => {
+            editorInsertNewline();
+        },
+        // Ctrl-c
+        KEY_ACTION.CTRL_C => {
+            // We ignore ctrl-c, it can't be so simple to lose the changes
+            // to the edited file.
+            c.exit(2);
+        },
+        //     case CTRL_Q: // Ctrl-q
 
-    //         editorInsertNewline();a
-    //         break;
-    //     case CTRL_C: // Ctrl-c
+        //         // Quit if the file was already saved.
 
-    //         // We ignore ctrl-c, it can't be so simple to lose the changes
-    //         // to the edited file.
+        //         if (E.dirty && quit_times)
+        //         {
+        //             editorSetStatusMessage("WARNING!!! File has unsaved changes. "
+        //                                    "Press Ctrl-Q %d more times to quit.",
+        //                                    quit_times);
+        //             quit_times--;
+        //             return;
+        //         }
+        //         exit(0);
+        //         break;
+        //     case CTRL_S: // Ctrl-s
 
-    //         break;
-    //     case CTRL_Q: // Ctrl-q
+        //         editorSave();
+        //         break;
+        //     case CTRL_F:
+        //         editorFind(fd);
+        //         break;
+        //     case BACKSPACE: // Backspace
 
-    //         // Quit if the file was already saved.
+        //     case CTRL_H: // Ctrl-h
 
-    //         if (E.dirty && quit_times)
-    //         {
-    //             editorSetStatusMessage("WARNING!!! File has unsaved changes. "
-    //                                    "Press Ctrl-Q %d more times to quit.",
-    //                                    quit_times);
-    //             quit_times--;
-    //             return;
-    //         }
-    //         exit(0);
-    //         break;
-    //     case CTRL_S: // Ctrl-s
+        //     case DEL_KEY:
+        //         editorDelChar();
+        //         break;
+        //     case PAGE_UP:
+        //     case PAGE_DOWN:
+        //         if (c == PAGE_UP && E.cy != 0)
+        //             E.cy = 0;
+        //         else if (c == PAGE_DOWN && E.cy != E.screenrows - 1)
+        //             E.cy = E.screenrows - 1;
+        //         {
+        //             int times = E.screenrows;
+        //             while (times--)
+        //                 editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+        //         }
+        //         break;
 
-    //         editorSave();
-    //         break;
-    //     case CTRL_F:
-    //         editorFind(fd);
-    //         break;
-    //     case BACKSPACE: // Backspace
+        //     case ARROW_UP:
+        //     case ARROW_DOWN:
+        //     case ARROW_LEFT:
+        //     case ARROW_RIGHT:
+        //         editorMoveCursor(c);
+        //         break;
+        //     case CTRL_L: // ctrl+l, clear screen
 
-    //     case CTRL_H: // Ctrl-h
+        //         // Just refresht the line as side effect.
 
-    //     case DEL_KEY:
-    //         editorDelChar();
-    //         break;
-    //     case PAGE_UP:
-    //     case PAGE_DOWN:
-    //         if (c == PAGE_UP && E.cy != 0)
-    //             E.cy = 0;
-    //         else if (c == PAGE_DOWN && E.cy != E.screenrows - 1)
-    //             E.cy = E.screenrows - 1;
-    //         {
-    //             int times = E.screenrows;
-    //             while (times--)
-    //                 editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
-    //         }
-    //         break;
+        //         break;
+        //     case ESC:
+        //         // Nothing to do for ESC in this mode.
 
-    //     case ARROW_UP:
-    //     case ARROW_DOWN:
-    //     case ARROW_LEFT:
-    //     case ARROW_RIGHT:
-    //         editorMoveCursor(c);
-    //         break;
-    //     case CTRL_L: // ctrl+l, clear screen
+        //         break;
+        //     default:
+        //         editorInsertChar(c);
+        //         break;
+        else => unreachable,
+    }
 
-    //         // Just refresht the line as side effect.
-
-    //         break;
-    //     case ESC:
-    //         // Nothing to do for ESC in this mode.
-
-    //         break;
-    //     default:
-    //         editorInsertChar(c);
-    //         break;
-    //     }
-
-    //     quit_times = KILO_QUIT_TIMES; // Reset it to the original value.
+    S.quit_times = KILO_QUIT_TIMES; // Reset it to the original value.
 }
 
 // int editorFileWasModified(void)
@@ -1583,6 +1586,6 @@ pub fn main() anyerror!void {
     editorSetStatusMessage("HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find", .{});
     while (true) {
         try editorRefreshScreen();
-        // editorProcessKeypress(STDIN_FILENO);
+        editorProcessKeypress(c.STDIN_FILENO);
     }
 }
