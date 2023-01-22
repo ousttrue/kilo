@@ -1,10 +1,10 @@
-Kilo
-===
+# Kilo
 
 Kilo is a small text editor in less than 1K lines of code (counted with cloc).
 
 A screencast is available here: https://asciinema.org/a/90r2i9bq8po03nazhqtsifksb
 
+```
 Usage: kilo `<filename>`
 
 Keys:
@@ -12,6 +12,7 @@ Keys:
     CTRL-S: Save
     CTRL-Q: Quit
     CTRL-F: Find string in file (ESC to exit search, arrows to navigate)
+```
 
 Kilo does not depend on any library (not even curses). It uses fairly standard
 VT100 (and similar terminals) escape sequences. The project is in alpha
@@ -24,3 +25,9 @@ style CLI.
 
 Kilo was written by Salvatore Sanfilippo aka antirez and is released
 under the BSD 2 clause license.
+
+## mod
+
+- [ ] tree sitter for syntax highlight
+- [ ] windows conpty
+- [ ] libuv

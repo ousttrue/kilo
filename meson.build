@@ -1,10 +1,6 @@
-project('kilo', ['c', 'cpp'])
-executable(
+project(
     'kilo',
-    [
-        'main.cpp',
-        'kilo.cpp',
-        'editor.cpp',
-    ],
-    install: true,
+    ['c', 'cpp'],
+    default_options: ['cpp_std=c++20'],
 )
+subdir('src')
