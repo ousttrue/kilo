@@ -78,5 +78,3 @@ struct editorConfig {
   int editorSave(void);
   int editorOpen(const char *filename);
 };
-
-extern struct editorConfig E;

@@ -11,8 +11,6 @@
 #include <string.h>
 #include <unistd.h>
 
-struct editorConfig E;
-
 void editorConfig::init() {
   this->cx = 0;
   this->cy = 0;
@@ -112,16 +110,16 @@ void editorConfig::editorRefreshScreen(void) {
 
   ab.abAppend("\x1b[?25l", 6); /* Hide cursor. */
   ab.abAppend("\x1b[H", 3);    /* Go home. */
-  for (y = 0; y < E.screen.rows; y++) {
-    int filerow = E.rowoff + y;
+  for (y = 0; y < this->screen.rows; y++) {
+    int filerow = this->rowoff + y;
 
-    if (filerow >= E.numrows) {
-      if (E.numrows == 0 && y == E.screen.rows / 3) {
+    if (filerow >= this->numrows) {
+      if (this->numrows == 0 && y == this->screen.rows / 3) {
         char welcome[80];
         int welcomelen =
             snprintf(welcome, sizeof(welcome),
                      "Kilo editor -- verison %s\x1b[0K\r\n", KILO_VERSION);
-        int padding = (E.screen.cols - welcomelen) / 2;
+        int padding = (this->screen.cols - welcomelen) / 2;
         if (padding) {
           ab.abAppend("~", 1);
           padding--;
@@ -135,15 +133,15 @@ void editorConfig::editorRefreshScreen(void) {
       continue;
     }
 
-    r = &E.row[filerow];
+    r = &this->row[filerow];
 
-    int len = r->rsize - E.coloff;
+    int len = r->rsize - this->coloff;
     int current_color = -1;
     if (len > 0) {
-      if (len > E.screen.cols)
-        len = E.screen.cols;
-      char *c = r->render + E.coloff;
-      auto hl = r->hl + E.coloff;
+      if (len > this->screen.cols)
+        len = this->screen.cols;
+      char *c = r->render + this->coloff;
+      auto hl = r->hl + this->coloff;
       int j;
       for (j = 0; j < len; j++) {
         if (hl[j] == HL_NONPRINT) {
@@ -182,15 +180,15 @@ void editorConfig::editorRefreshScreen(void) {
   ab.abAppend("\x1b[0K", 4);
   ab.abAppend("\x1b[7m", 4);
   char status[80], rstatus[80];
-  int len = snprintf(status, sizeof(status), "%.20s - %d lines %s", E.filename,
-                     E.numrows, E.dirty ? "(modified)" : "");
-  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", E.rowoff + E.cy + 1,
-                      E.numrows);
-  if (len > E.screen.cols)
-    len = E.screen.cols;
+  int len = snprintf(status, sizeof(status), "%.20s - %d lines %s", this->filename,
+                     this->numrows, this->dirty ? "(modified)" : "");
+  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", this->rowoff + this->cy + 1,
+                      this->numrows);
+  if (len > this->screen.cols)
+    len = this->screen.cols;
   ab.abAppend(status, len);
-  while (len < E.screen.cols) {
-    if (E.screen.cols - len == rlen) {
+  while (len < this->screen.cols) {
+    if (this->screen.cols - len == rlen) {
       ab.abAppend(rstatus, rlen);
       break;
     } else {
@@ -200,27 +198,27 @@ void editorConfig::editorRefreshScreen(void) {
   }
   ab.abAppend("\x1b[0m\r\n", 6);
 
-  /* Second row depends on E.statusmsg and the status message update time. */
+  /* Second row depends on this->statusmsg and the status message update time. */
   ab.abAppend("\x1b[0K", 4);
-  int msglen = strlen(E.statusmsg);
-  if (msglen && time(NULL) - E.statusmsg_time < 5)
-    ab.abAppend(E.statusmsg, msglen <= E.screen.cols ? msglen : E.screen.cols);
+  int msglen = strlen(this->statusmsg);
+  if (msglen && time(NULL) - this->statusmsg_time < 5)
+    ab.abAppend(this->statusmsg, msglen <= this->screen.cols ? msglen : this->screen.cols);
 
   /* Put cursor at its current position. Note that the horizontal position
-   * at which the cursor is displayed may be different compared to 'E.cx'
+   * at which the cursor is displayed may be different compared to 'this->cx'
    * because of TABs. */
   int j;
   int cx = 1;
-  int filerow = E.rowoff + E.cy;
-  erow *row = (filerow >= E.numrows) ? NULL : &E.row[filerow];
+  int filerow = this->rowoff + this->cy;
+  erow *row = (filerow >= this->numrows) ? NULL : &this->row[filerow];
   if (row) {
-    for (j = E.coloff; j < (E.cx + E.coloff); j++) {
+    for (j = this->coloff; j < (this->cx + this->coloff); j++) {
       if (j < row->size && row->chars[j] == TAB)
         cx += 7 - ((cx) % 8);
       cx++;
     }
   }
-  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, cx);
+  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", this->cy + 1, cx);
   ab.abAppend(buf, strlen(buf));
   ab.abAppend("\x1b[?25h", 6); /* Show cursor. */
   write(STDOUT_FILENO, ab.b, ab.len);

@@ -89,7 +89,7 @@ std::stack<Mode> g_stack;
 /* Process events arriving from the standard input, which is, the user
  * is typing stuff on the terminal. */
 #define KILO_QUIT_TIMES 3
-bool editorProcessKeypress(int c) {
+bool editorProcessKeypress(editorConfig &E, int c) {
   /* When the file is modified, requires Ctrl-q to be pressed N times
    * before actually quitting. */
   static int quit_times = KILO_QUIT_TIMES;
@@ -165,21 +165,23 @@ bool editorProcessKeypress(int c) {
 }
 
 /* Called at exit to avoid remaining in raw mode. */
+editorConfig *g_E = nullptr;
+
 void editorAtExit(void) {
-  if (E.rawmode) {
+  if (g_E->rawmode) {
     disableRawMode(STDIN_FILENO);
-    E.rawmode = 0;
+    g_E->rawmode = 0;
   }
 }
 
 static void handleSigWinCh(int) {
   if (auto size = getTermSize(STDIN_FILENO, STDOUT_FILENO)) {
-    E.setScreenSize(*size);
+    g_E->setScreenSize(*size);
   } else {
     perror("Unable to query the screen for size (columns / rows)");
     exit(1);
   }
-  E.editorRefreshScreen();
+  g_E->editorRefreshScreen();
 }
 
 int main(int argc, char **argv) {
@@ -187,6 +189,9 @@ int main(int argc, char **argv) {
     fprintf(stderr, "Usage: kilo <filename>\n");
     return 1;
   }
+
+  editorConfig E;
+  g_E = &E;
 
   E.init();
   signal(SIGWINCH, handleSigWinCh);
@@ -206,7 +211,7 @@ int main(int argc, char **argv) {
   E.editorSetStatusMessage(
       "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find");
 
-  g_stack.push({&editorProcessKeypress});
+  g_stack.push({[&E](int c) { return editorProcessKeypress(E, c); }});
   while (!g_stack.empty()) {
     E.editorRefreshScreen();
 
