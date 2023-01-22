@@ -1,4 +1,5 @@
 #include "kilo.h"
+#include "editor.h"
 #include <stdio.h>
 #include <unistd.h> // STDIN_FILENO
 
@@ -8,7 +9,7 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  initEditor();
+  E.init();
   editorSelectSyntaxHighlight(argv[1]);
   editorOpen(argv[1]);
   enableRawMode(STDIN_FILENO);

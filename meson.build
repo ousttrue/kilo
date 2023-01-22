@@ -4,6 +4,7 @@ executable(
     [
         'main.cpp',
         'kilo.cpp',
+        'editor.cpp',
     ],
     install: true,
 )

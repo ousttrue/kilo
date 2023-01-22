@@ -39,6 +39,7 @@
 #endif
 
 #include "kilo.h"
+#include "editor.h"
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -52,7 +53,6 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <termios.h>
-#include <time.h>
 #include <unistd.h>
 
 /* Syntax highlight types */
@@ -78,39 +78,9 @@ struct editorSyntax {
   int flags;
 };
 
-/* This structure represents a single line of the file we are editing. */
-typedef struct erow {
-  int idx;           /* Row index in the file, zero-based. */
-  int size;          /* Size of the row, excluding the null term. */
-  int rsize;         /* Size of the rendered row. */
-  char *chars;       /* Row content. */
-  char *render;      /* Row content "rendered" for screen (for TABs). */
-  unsigned char *hl; /* Syntax highlight type for each character in render.*/
-  int hl_oc;         /* Row had open comment at end in last syntax highlight
-                        check. */
-} erow;
-
 typedef struct hlcolor {
   int r, g, b;
 } hlcolor;
-
-struct editorConfig {
-  int cx, cy;     /* Cursor x and y position in characters */
-  int rowoff;     /* Offset of row displayed. */
-  int coloff;     /* Offset of column displayed. */
-  int screenrows; /* Number of rows that we can show */
-  int screencols; /* Number of cols that we can show */
-  int numrows;    /* Number of rows */
-  int rawmode;    /* Is terminal raw mode enabled? */
-  erow *row;      /* Rows */
-  int dirty;      /* File modified but not saved. */
-  char *filename; /* Currently open filename */
-  char statusmsg[80];
-  time_t statusmsg_time;
-  struct editorSyntax *syntax; /* Current syntax highlight, or NULL. */
-};
-
-static struct editorConfig E;
 
 enum KEY_ACTION {
   KEY_NULL = 0,    /* NULL */
@@ -1321,35 +1291,3 @@ void editorProcessKeypress(int fd) {
 }
 
 int editorFileWasModified(void) { return E.dirty; }
-
-void updateWindowSize(void) {
-  if (getWindowSize(STDIN_FILENO, STDOUT_FILENO, &E.screenrows,
-                    &E.screencols) == -1) {
-    perror("Unable to query the screen for size (columns / rows)");
-    exit(1);
-  }
-  E.screenrows -= 2; /* Get room for status bar. */
-}
-
-void handleSigWinCh(int unused __attribute__((unused))) {
-  updateWindowSize();
-  if (E.cy > E.screenrows)
-    E.cy = E.screenrows - 1;
-  if (E.cx > E.screencols)
-    E.cx = E.screencols - 1;
-  editorRefreshScreen();
-}
-
-void initEditor(void) {
-  E.cx = 0;
-  E.cy = 0;
-  E.rowoff = 0;
-  E.coloff = 0;
-  E.numrows = 0;
-  E.row = NULL;
-  E.dirty = 0;
-  E.filename = NULL;
-  E.syntax = NULL;
-  updateWindowSize();
-  signal(SIGWINCH, handleSigWinCh);
-}
