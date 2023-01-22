@@ -1,6 +1,4 @@
-extern "C" {
 #include "kilo.h"
-}
 #include <stdio.h>
 #include <unistd.h> // STDIN_FILENO
 

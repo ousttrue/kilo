@@ -70,8 +70,8 @@
 #define HL_HIGHLIGHT_NUMBERS (1 << 1)
 
 struct editorSyntax {
-  char **filematch;
-  char **keywords;
+  const char **filematch;
+  const char **keywords;
   char singleline_comment_start[2];
   char multiline_comment_start[3];
   char multiline_comment_end[3];
@@ -161,8 +161,8 @@ enum KEY_ACTION {
  * There is no support to highlight patterns currently. */
 
 /* C / C++ */
-char *C_HL_extensions[] = {".c", ".h", ".cpp", ".hpp", ".cc", NULL};
-char *C_HL_keywords[] = {
+const char *C_HL_extensions[] = {".c", ".h", ".cpp", ".hpp", ".cc", NULL};
+const char *C_HL_keywords[] = {
     /* C Keywords */
     "auto", "break", "case", "continue", "default", "do", "else", "enum",
     "extern", "for", "goto", "if", "register", "return", "sizeof", "static",
@@ -184,7 +184,11 @@ char *C_HL_keywords[] = {
 /* Here we define an array of syntax highlights by extensions, keywords,
  * comments delimiters and flags. */
 struct editorSyntax HLDB[] = {{/* C / C++ */
-                               C_HL_extensions, C_HL_keywords, "//", "/*", "*/",
+                               C_HL_extensions,
+                               C_HL_keywords,
+                               {'/', '/'},
+                               {'/', '*'},
+                               {'*', '/'},
                                HL_HIGHLIGHT_STRINGS | HL_HIGHLIGHT_NUMBERS}};
 
 #define HLDB_ENTRIES (sizeof(HLDB) / sizeof(HLDB[0]))
@@ -399,7 +403,7 @@ int editorRowHasOpenComment(erow *row) {
 /* Set every byte of row->hl (that corresponds to every character in the line)
  * to the right syntax highlight type (HL_* defines). */
 void editorUpdateSyntax(erow *row) {
-  row->hl = realloc(row->hl, row->rsize);
+  row->hl = (unsigned char *)realloc(row->hl, row->rsize);
   memset(row->hl, HL_NORMAL, row->rsize);
 
   if (E.syntax == NULL)
@@ -407,7 +411,7 @@ void editorUpdateSyntax(erow *row) {
 
   int i, prev_sep, in_string, in_comment;
   char *p;
-  char **keywords = E.syntax->keywords;
+  const char **keywords = E.syntax->keywords;
   char *scs = E.syntax->singleline_comment_start;
   char *mcs = E.syntax->multiline_comment_start;
   char *mce = E.syntax->multiline_comment_end;
@@ -607,7 +611,7 @@ void editorUpdateRow(erow *row) {
     exit(1);
   }
 
-  row->render = malloc(row->size + tabs * 8 + nonprint * 9 + 1);
+  row->render = (char *)malloc(row->size + tabs * 8 + nonprint * 9 + 1);
   idx = 0;
   for (j = 0; j < row->size; j++) {
     if (row->chars[j] == TAB) {
@@ -627,17 +631,17 @@ void editorUpdateRow(erow *row) {
 
 /* Insert a row at the specified position, shifting the other rows on the bottom
  * if required. */
-void editorInsertRow(int at, char *s, size_t len) {
+void editorInsertRow(int at, const char *s, size_t len) {
   if (at > E.numrows)
     return;
-  E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
+  E.row = (erow *)realloc(E.row, sizeof(erow) * (E.numrows + 1));
   if (at != E.numrows) {
     memmove(E.row + at + 1, E.row + at, sizeof(E.row[0]) * (E.numrows - at));
     for (int j = at + 1; j <= E.numrows; j++)
       E.row[j].idx++;
   }
   E.row[at].size = len;
-  E.row[at].chars = malloc(len + 1);
+  E.row[at].chars = (char *)malloc(len + 1);
   memcpy(E.row[at].chars, s, len + 1);
   E.row[at].hl = NULL;
   E.row[at].hl_oc = 0;
@@ -687,7 +691,7 @@ char *editorRowsToString(int *buflen) {
   *buflen = totlen;
   totlen++; /* Also make space for nulterm */
 
-  p = buf = malloc(totlen);
+  p = buf = (char *)malloc(totlen);
   for (j = 0; j < E.numrows; j++) {
     memcpy(p, E.row[j].chars, E.row[j].size);
     p += E.row[j].size;
@@ -706,14 +710,14 @@ void editorRowInsertChar(erow *row, int at, int c) {
      * current length by more than a single character. */
     int padlen = at - row->size;
     /* In the next line +2 means: new char and null term. */
-    row->chars = realloc(row->chars, row->size + padlen + 2);
+    row->chars = (char *)realloc(row->chars, row->size + padlen + 2);
     memset(row->chars + row->size, ' ', padlen);
     row->chars[row->size + padlen + 1] = '\0';
     row->size += padlen + 1;
   } else {
     /* If we are in the middle of the string just make space for 1 new
      * char plus the (already existing) null term. */
-    row->chars = realloc(row->chars, row->size + 2);
+    row->chars = (char *)realloc(row->chars, row->size + 2);
     memmove(row->chars + at + 1, row->chars + at, row->size - at + 1);
     row->size++;
   }
@@ -724,7 +728,7 @@ void editorRowInsertChar(erow *row, int at, int c) {
 
 /* Append the string 's' at the end of a row */
 void editorRowAppendString(erow *row, char *s, size_t len) {
-  row->chars = realloc(row->chars, row->size + len + 1);
+  row->chars = (char *)realloc(row->chars, row->size + len + 1);
   memcpy(row->chars + row->size, s, len);
   row->size += len;
   row->chars[row->size] = '\0';
@@ -846,7 +850,7 @@ int editorOpen(char *filename) {
   E.dirty = 0;
   free(E.filename);
   size_t fnlen = strlen(filename) + 1;
-  E.filename = malloc(fnlen);
+  E.filename = (char *)malloc(fnlen);
   memcpy(E.filename, filename, fnlen);
 
   fp = fopen(filename, "r");
@@ -916,12 +920,12 @@ struct abuf {
   { NULL, 0 }
 
 void abAppend(struct abuf *ab, const char *s, int len) {
-  char *new = realloc(ab->b, ab->len + len);
+  char *new_ = (char *)realloc(ab->b, ab->len + len);
 
-  if (new == NULL)
+  if (new_ == NULL)
     return;
-  memcpy(new + ab->len, s, len);
-  ab->b = new;
+  memcpy(new_ + ab->len, s, len);
+  ab->b = new_;
   ab->len += len;
 }
 
@@ -1148,7 +1152,7 @@ void editorFind(int fd) {
         last_match = current;
         if (row->hl) {
           saved_hl_line = current;
-          saved_hl = malloc(row->rsize);
+          saved_hl = (char *)malloc(row->rsize);
           memcpy(saved_hl, row->hl, row->rsize);
           memset(row->hl + match_offset, HL_MATCH, qlen);
         }

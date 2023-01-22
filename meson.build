@@ -3,7 +3,7 @@ executable(
     'kilo',
     [
         'main.cpp',
-        'kilo.c',
+        'kilo.cpp',
     ],
     install: true,
 )
