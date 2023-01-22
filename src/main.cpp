@@ -96,10 +96,7 @@ bool editorProcessKeypress(editorConfig &E, int c) {
 editorConfig *g_E = nullptr;
 
 void editorAtExit(void) {
-  if (g_E->rawmode) {
-    disableRawMode(STDIN_FILENO);
-    g_E->rawmode = 0;
-  }
+    disableRawMode();
 }
 
 int main(int argc, char **argv) {
@@ -111,7 +108,7 @@ int main(int argc, char **argv) {
   editorConfig E = {};
   g_E = &E;
 
-  if (auto size = getTermSize(STDIN_FILENO, STDOUT_FILENO)) {
+  if (auto size = getTermSize()) {
     E.setScreenSize(*size);
   } else {
     perror("Unable to query the screen for size (columns / rows)");
@@ -122,8 +119,7 @@ int main(int argc, char **argv) {
 
   E.syntax = editorSelectSyntaxHighlight(argv[1]);
   E.editorOpen(argv[1]);
-  enableRawMode(STDIN_FILENO);
-  E.rawmode = 1;
+  enableRawMode();
   atexit(editorAtExit);
 
   E.editorSetStatusMessage(
@@ -163,7 +159,7 @@ int main(int argc, char **argv) {
       break;
 
     case InputEventType::Resize:
-      if (auto size = getTermSize(STDIN_FILENO, STDOUT_FILENO)) {
+      if (auto size = getTermSize()) {
         E.setScreenSize(*size);
       }
       break;
@@ -173,6 +169,6 @@ int main(int argc, char **argv) {
     }
   }
 
-  disableRawMode(STDIN_FILENO);
+  disableRawMode();
   return 0;
 }

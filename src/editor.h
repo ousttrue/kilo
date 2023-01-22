@@ -17,8 +17,6 @@ struct editorConfig {
   TermSize screen;
   // Number of rows
   int numrows = 0;
-  // Is terminal raw mode enabled?
-  bool rawmode = false;
   // Rows
   struct erow *row = 0;
   // File modified but not saved.

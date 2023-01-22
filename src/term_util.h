@@ -7,10 +7,9 @@ struct TermSize {
   int cols;
 };
 
-std::optional<TermSize> getTermSize(int ifd, int ofd);
-
-int enableRawMode(int fd);
-void disableRawMode(int fd);
+std::optional<TermSize> getTermSize();
+bool enableRawMode();
+void disableRawMode();
 
 enum KEY_ACTION {
   KEY_NULL = 0,    /* NULL */

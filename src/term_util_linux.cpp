@@ -1,3 +1,4 @@
+#ifndef _WIN32
 #include "term_util.h"
 #include <assert.h>
 #include <cstdint>
@@ -9,6 +10,9 @@
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
+
+// Is terminal raw mode enabled?
+bool rawmode = false;
 
 /* Use the ESC [6n escape sequence to query the horizontal cursor position
  * and return it. On error -1 is returned, on success the position of the
@@ -42,7 +46,9 @@ static int getCursorPosition(int ifd, int ofd, int *rows, int *cols) {
 /* Try to get the number of columns in the current terminal. If the ioctl()
  * call fails the function will try to query the terminal itself.
  * Returns 0 on success, -1 on error. */
-std::optional<TermSize> getTermSize(int ifd, int ofd) {
+std::optional<TermSize> getTermSize() {
+  int ifd = STDIN_FILENO;
+  int ofd = STDOUT_FILENO;
   struct winsize ws;
 
   TermSize size{};
@@ -82,8 +88,11 @@ failed:
 static struct termios orig_termios; /* In order to restore at exit.*/
 
 void disableRawMode(int fd) {
+  if (g_E->rawmode) {
   /* Don't even check the return value as it's too late. */
   tcsetattr(fd, TCSAFLUSH, &orig_termios);
+    g_E->rawmode = 0;
+  }
 }
 
 /* Raw mode: 1960 magic shit. */
@@ -113,6 +122,7 @@ int enableRawMode(int fd) {
   /* put terminal in raw mode after flushing */
   if (tcsetattr(fd, TCSAFLUSH, &raw) < 0)
     goto fatal;
+  E.rawmode = 1;
   return 0;
 
 fatal:
@@ -257,3 +267,4 @@ InputEvent InputEvent::get() {
     }
   }
 }
+#endif
