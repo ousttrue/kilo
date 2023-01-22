@@ -15,7 +15,7 @@ void editorProcessKeypress(int fd) {
   int c = editorReadKey(fd);
   switch (c) {
   case ENTER: /* Enter */
-    editorInsertNewline();
+    E.editorInsertNewline();
     break;
   case CTRL_C: /* Ctrl-c */
     /* We ignore ctrl-c, it can't be so simple to lose the changes
@@ -41,7 +41,7 @@ void editorProcessKeypress(int fd) {
   case BACKSPACE: /* Backspace */
   case CTRL_H:    /* Ctrl-h */
   case DEL_KEY:
-    editorDelChar();
+    E.editorDelChar();
     break;
   case PAGE_UP:
   case PAGE_DOWN:
@@ -69,7 +69,7 @@ void editorProcessKeypress(int fd) {
     /* Nothing to do for ESC in this mode. */
     break;
   default:
-    editorInsertChar(c);
+    E.editorInsertChar(c);
     break;
   }
 
@@ -83,8 +83,8 @@ int main(int argc, char **argv) {
   }
 
   E.init();
-  editorSelectSyntaxHighlight(argv[1]);
-  editorOpen(argv[1]);
+  E.editorSelectSyntaxHighlight(argv[1]);
+  E.editorOpen(argv[1]);
   enableRawMode(STDIN_FILENO);
   E.editorSetStatusMessage("HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find");
   while (1) {

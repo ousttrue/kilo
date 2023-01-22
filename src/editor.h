@@ -2,16 +2,13 @@
 #include "kilo.h"
 #include <time.h>
 
-/* This structure represents a single line of the file we are editing. */
-struct erow {
-  int idx;            /* Row index in the file, zero-based. */
-  int size;           /* Size of the row, excluding the null term. */
-  int rsize;          /* Size of the rendered row. */
-  char *chars;        /* Row content. */
-  char *render;       /* Row content "rendered" for screen (for TABs). */
-  HighLightTypes *hl; /* Syntax highlight type for each character in render.*/
-  int hl_oc;          /* Row had open comment at end in last syntax highlight
-                         check. */
+struct editorSyntax {
+  const char **filematch;
+  const char **keywords;
+  char singleline_comment_start[2];
+  char multiline_comment_start[3];
+  char multiline_comment_end[3];
+  int flags;
 };
 
 struct editorConfig {
@@ -22,21 +19,34 @@ struct editorConfig {
   int screencols; /* Number of cols that we can show */
   int numrows;    /* Number of rows */
   int rawmode;    /* Is terminal raw mode enabled? */
-  erow *row;      /* Rows */
+  struct erow *row;      /* Rows */
   int dirty = 0;  /* File modified but not saved. */
   char *filename; /* Currently open filename */
   char statusmsg[80];
   time_t statusmsg_time;
-  struct editorSyntax *syntax; /* Current syntax highlight, or NULL. */
+  editorSyntax *syntax; /* Current syntax highlight, or NULL. */
 
   void init();
 
-  // Handle cursor position change because arrow keys were pressed.
+  void editorUpdateRow(erow *row);
+  void editorInsertRow(int at, const char *s, size_t len);
+  char *editorRowsToString(int *buflen);
+  void editorUpdateSyntax(erow *row);
+  void editorDelRow(int at);
+  void editorRowInsertChar(erow *row, int at, int c);
+  void editorRowAppendString(erow *row, char *s, size_t len);
+  void editorRowDelChar(erow *row, int at);
+  void editorInsertChar(int c);
+  void editorInsertNewline(void);
+  void editorDelChar();
+
+  void editorSelectSyntaxHighlight(const char *filename);
   void editorMoveCursor(int key);
   void editorSetStatusMessage(const char *fmt, ...);
   void editorRefreshScreen(void);
   void editorFind(int fd);
   int editorSave(void);
+  int editorOpen(const char *filename);
 };
 
 extern struct editorConfig E;
