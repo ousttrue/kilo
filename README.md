@@ -28,9 +28,4 @@ under the BSD 2 clause license.
 
 ## mod
 
-- [ ] keyboard input
-- [ ] SIGWINCH handling
-
-- [ ] tree sitter for syntax highlight
-- [ ] windows conpty
-- [ ] libuv
+- [x] windows input (conpty ?)

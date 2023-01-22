@@ -5,6 +5,7 @@ srcs = [
     'append_buffer.cpp',
     'syntax_highlight.cpp',
     'find_mode.cpp',
+    'escape_sequence.cpp',
 ]
 if host_machine.system() == 'windows'
     srcs += 'term_util_win32.cpp'

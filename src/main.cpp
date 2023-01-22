@@ -95,9 +95,7 @@ bool editorProcessKeypress(editorConfig &E, int c) {
 /* Called at exit to avoid remaining in raw mode. */
 editorConfig *g_E = nullptr;
 
-void editorAtExit(void) {
-    disableRawMode();
-}
+void editorAtExit(void) { InputEvent::finalize(); }
 
 int main(int argc, char **argv) {
   if (argc != 2) {
@@ -108,18 +106,20 @@ int main(int argc, char **argv) {
   editorConfig E = {};
   g_E = &E;
 
+  if(!InputEvent::initialize())
+  {
+    return 2;
+  }
+
   if (auto size = getTermSize()) {
     E.setScreenSize(*size);
   } else {
     perror("Unable to query the screen for size (columns / rows)");
-    return 1;
+    return 3;
   }
-
-  InputEvent::initialize();
 
   E.syntax = editorSelectSyntaxHighlight(argv[1]);
   E.editorOpen(argv[1]);
-  enableRawMode();
   atexit(editorAtExit);
 
   E.editorSetStatusMessage(
@@ -169,6 +169,6 @@ int main(int argc, char **argv) {
     }
   }
 
-  disableRawMode();
+  InputEvent::finalize();
   return 0;
 }
