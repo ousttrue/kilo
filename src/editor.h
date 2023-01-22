@@ -29,6 +29,9 @@ struct editorConfig {
   struct editorSyntax *syntax; /* Current syntax highlight, or NULL. */
 
   void init();
+
+  // Handle cursor position change because arrow keys were pressed.
+  void editorMoveCursor(int key);
 };
 
 extern struct editorConfig E;

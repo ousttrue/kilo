@@ -52,7 +52,7 @@ void editorProcessKeypress(int fd) {
     {
       int times = E.screenrows;
       while (times--)
-        editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+        E.editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
     }
     break;
 
@@ -60,7 +60,7 @@ void editorProcessKeypress(int fd) {
   case ARROW_DOWN:
   case ARROW_LEFT:
   case ARROW_RIGHT:
-    editorMoveCursor(c);
+    E.editorMoveCursor(c);
     break;
   case CTRL_L: /* ctrl+l, clear screen */
     /* Just refresht the line as side effect. */
