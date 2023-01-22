@@ -32,6 +32,8 @@ struct editorConfig {
 
   // Handle cursor position change because arrow keys were pressed.
   void editorMoveCursor(int key);
+
+  void editorFind(int fd);
 };
 
 extern struct editorConfig E;

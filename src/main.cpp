@@ -36,7 +36,7 @@ void editorProcessKeypress(int fd) {
     editorSave();
     break;
   case CTRL_F:
-    editorFind(fd);
+    E.editorFind(fd);
     break;
   case BACKSPACE: /* Backspace */
   case CTRL_H:    /* Ctrl-h */

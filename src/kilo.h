@@ -27,6 +27,19 @@ enum KEY_ACTION {
   PAGE_DOWN
 };
 
+/* Syntax highlight types */
+enum HighLightTypes {
+  HL_NORMAL = 0,
+  HL_NONPRINT = 1,
+  HL_COMMENT = 2,   /* Single line comment. */
+  HL_MLCOMMENT = 3, /* Multi-line comment. */
+  HL_KEYWORD1 = 4,
+  HL_KEYWORD2 = 5,
+  HL_STRING = 6,
+  HL_NUMBER = 7,
+  HL_MATCH = 8, /* Search match. */
+};
+
 void editorSelectSyntaxHighlight(char *filename);
 int editorOpen(char *filename);
 int enableRawMode(int fd);
@@ -36,6 +49,5 @@ void editorProcessKeypress(int fd);
 int editorReadKey(int fd);
 void editorInsertNewline(void);
 int editorSave(void);
-void editorFind(int fd);
 void editorDelChar();
 void editorInsertChar(int c);
