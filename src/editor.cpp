@@ -3,6 +3,8 @@
 #include "get_termsize.h"
 #include "kilo.h"
 #include <ctype.h>
+#include <errno.h>
+#include <fcntl.h> // open
 #include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -358,4 +360,59 @@ void editorConfig::editorSetStatusMessage(const char *fmt, ...) {
   vsnprintf(this->statusmsg, sizeof(this->statusmsg), fmt, ap);
   va_end(ap);
   this->statusmsg_time = time(NULL);
+}
+
+/* Turn the editor rows into a single heap-allocated string.
+ * Returns the pointer to the heap-allocated string and populate the
+ * integer pointed by 'buflen' with the size of the string, escluding
+ * the final nulterm. */
+static char *editorRowsToString(int *buflen) {
+  char *buf = NULL, *p;
+  int totlen = 0;
+  int j;
+
+  /* Compute count of bytes */
+  for (j = 0; j < E.numrows; j++)
+    totlen += E.row[j].size + 1; /* +1 is for "\n" at end of every row */
+  *buflen = totlen;
+  totlen++; /* Also make space for nulterm */
+
+  p = buf = (char *)malloc(totlen);
+  for (j = 0; j < E.numrows; j++) {
+    memcpy(p, E.row[j].chars, E.row[j].size);
+    p += E.row[j].size;
+    *p = '\n';
+    p++;
+  }
+  *p = '\0';
+  return buf;
+}
+
+/* Save the current file on disk. Return 0 on success, 1 on error. */
+int editorConfig::editorSave(void) {
+  int len;
+  char *buf = editorRowsToString(&len);
+  int fd = open(this->filename, O_RDWR | O_CREAT, 0644);
+  if (fd == -1)
+    goto writeerr;
+
+  /* Use truncate + a single write(2) call in order to make saving
+   * a bit safer, under the limits of what we can do in a small editor. */
+  if (ftruncate(fd, len) == -1)
+    goto writeerr;
+  if (write(fd, buf, len) != len)
+    goto writeerr;
+
+  close(fd);
+  free(buf);
+  this->dirty = 0;
+  this->editorSetStatusMessage("%d bytes written on disk", len);
+  return 0;
+
+writeerr:
+  free(buf);
+  if (fd != -1)
+    close(fd);
+  this->editorSetStatusMessage("Can't save! I/O error: %s", strerror(errno));
+  return 1;
 }

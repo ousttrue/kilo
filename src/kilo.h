@@ -68,6 +68,5 @@ int enableRawMode(int fd);
 void editorProcessKeypress(int fd);
 int editorReadKey(int fd);
 void editorInsertNewline(void);
-int editorSave(void);
 void editorDelChar();
 void editorInsertChar(int c);

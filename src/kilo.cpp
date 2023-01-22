@@ -515,32 +515,6 @@ void editorDelRow(int at) {
   E.dirty++;
 }
 
-/* Turn the editor rows into a single heap-allocated string.
- * Returns the pointer to the heap-allocated string and populate the
- * integer pointed by 'buflen' with the size of the string, escluding
- * the final nulterm. */
-char *editorRowsToString(int *buflen) {
-  char *buf = NULL, *p;
-  int totlen = 0;
-  int j;
-
-  /* Compute count of bytes */
-  for (j = 0; j < E.numrows; j++)
-    totlen += E.row[j].size + 1; /* +1 is for "\n" at end of every row */
-  *buflen = totlen;
-  totlen++; /* Also make space for nulterm */
-
-  p = buf = (char *)malloc(totlen);
-  for (j = 0; j < E.numrows; j++) {
-    memcpy(p, E.row[j].chars, E.row[j].size);
-    p += E.row[j].size;
-    *p = '\n';
-    p++;
-  }
-  *p = '\0';
-  return buf;
-}
-
 /* Insert a character at the specified position in a row, moving the remaining
  * chars on the right if needed. */
 void editorRowInsertChar(erow *row, int at, int c) {
@@ -713,33 +687,4 @@ int editorOpen(char *filename) {
   fclose(fp);
   E.dirty = 0;
   return 0;
-}
-
-/* Save the current file on disk. Return 0 on success, 1 on error. */
-int editorSave(void) {
-  int len;
-  char *buf = editorRowsToString(&len);
-  int fd = open(E.filename, O_RDWR | O_CREAT, 0644);
-  if (fd == -1)
-    goto writeerr;
-
-  /* Use truncate + a single write(2) call in order to make saving
-   * a bit safer, under the limits of what we can do in a small editor. */
-  if (ftruncate(fd, len) == -1)
-    goto writeerr;
-  if (write(fd, buf, len) != len)
-    goto writeerr;
-
-  close(fd);
-  free(buf);
-  E.dirty = 0;
-  E.editorSetStatusMessage("%d bytes written on disk", len);
-  return 0;
-
-writeerr:
-  free(buf);
-  if (fd != -1)
-    close(fd);
-  E.editorSetStatusMessage("Can't save! I/O error: %s", strerror(errno));
-  return 1;
 }

@@ -33,7 +33,7 @@ void editorProcessKeypress(int fd) {
     exit(0);
     break;
   case CTRL_S: /* Ctrl-s */
-    editorSave();
+    E.editorSave();
     break;
   case CTRL_F:
     E.editorFind(fd);
