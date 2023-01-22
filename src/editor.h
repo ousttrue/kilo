@@ -9,6 +9,7 @@ enum KEY_ACTION {
   CTRL_C = 3,      /* Ctrl-c */
   CTRL_D = 4,      /* Ctrl-d */
   CTRL_F = 6,      /* Ctrl-f */
+  CTRL_G = 7,      /* Ctrl-f */
   CTRL_H = 8,      /* Ctrl-h */
   TAB = 9,         /* Tab */
   CTRL_L = 12,     /* Ctrl+l */
@@ -64,7 +65,7 @@ struct editorConfig {
   void editorMoveCursor(int key);
   void editorSetStatusMessage(const char *fmt, ...);
   void editorRefreshScreen(void);
-  void editorFind(int fd, const std::function<int(int fd)> &readKey);
+  void editorFind(int c);
   int editorSave(void);
   int editorOpen(const char *filename);
 };

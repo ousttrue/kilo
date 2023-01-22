@@ -1,19 +1,24 @@
 #include "editor.h"
+#include "erow.h"
+#include "find_mode.h"
 #include "syntax_highlight.h"
 #include "term_util.h"
+#include <memory>
+#include <optional>
+#include <stack>
 #include <stdio.h>
-#include <stdlib.h>
 #include <unistd.h> // STDIN_FILENO
 
 /* Read a key from the terminal put in raw mode, trying to handle
  * escape sequences. */
-int editorReadKey(int fd) {
+std::optional<int> editorReadKey(int fd) {
   int nread;
   char c, seq[3];
   while ((nread = read(fd, &c, 1)) == 0)
     ;
-  if (nread == -1)
-    exit(1);
+  if (nread == -1) {
+    return {};
+  }
 
   while (1) {
     switch (c) {
@@ -74,15 +79,20 @@ int editorReadKey(int fd) {
   }
 }
 
+struct Mode {
+  std::function<bool(int c)> dispatch;
+  std::function<void()> prev = []() {};
+};
+std::stack<Mode> g_stack;
+
 /* Process events arriving from the standard input, which is, the user
  * is typing stuff on the terminal. */
 #define KILO_QUIT_TIMES 3
-void editorProcessKeypress(int fd) {
+bool editorProcessKeypress(int c) {
   /* When the file is modified, requires Ctrl-q to be pressed N times
    * before actually quitting. */
   static int quit_times = KILO_QUIT_TIMES;
 
-  int c = editorReadKey(fd);
   switch (c) {
   case ENTER: /* Enter */
     E.editorInsertNewline();
@@ -99,16 +109,22 @@ void editorProcessKeypress(int fd) {
                                "Press Ctrl-Q %d more times to quit.",
                                quit_times);
       quit_times--;
-      return;
+    } else {
+      g_stack.pop();
     }
-    exit(0);
     break;
   case CTRL_S: /* Ctrl-s */
     E.editorSave();
     break;
   case CTRL_F:
-    E.editorFind(fd, &editorReadKey);
-    break;
+  case CTRL_G:
+   {
+    auto find = std::make_shared<FindMode>(E);
+    g_stack.push(Mode{
+        .dispatch = [find](int c) { return find->dispatch(c); },
+        .prev = [find]() { find->prev(); },
+    });
+  } break;
   case BACKSPACE: /* Backspace */
   case CTRL_H:    /* Ctrl-h */
   case DEL_KEY:
@@ -145,6 +161,7 @@ void editorProcessKeypress(int fd) {
   }
 
   quit_times = KILO_QUIT_TIMES; /* Reset it to the original value. */
+  return true;
 }
 
 /* Called at exit to avoid remaining in raw mode. */
@@ -165,16 +182,28 @@ int main(int argc, char **argv) {
   E.syntax = editorSelectSyntaxHighlight(argv[1]);
   E.editorOpen(argv[1]);
   enableRawMode(STDIN_FILENO);
-  // if (E.rawmode)
-  //   return 0; /* Already enabled. */
   E.rawmode = 1;
-  atexit(editorAtExit);
+  // atexit(editorAtExit);
 
   E.editorSetStatusMessage(
       "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find");
+
+  g_stack.push({&editorProcessKeypress});
   while (1) {
     E.editorRefreshScreen();
-    editorProcessKeypress(STDIN_FILENO);
+
+    g_stack.top().prev();
+    if (auto c = editorReadKey(STDIN_FILENO)) {
+      if (!g_stack.top().dispatch(*c)) {
+        if (g_stack.empty()) {
+          break;
+        } else {
+          g_stack.pop();
+        }
+      }
+    } else {
+      break;
+    }
   }
 
   disableRawMode(STDIN_FILENO);
