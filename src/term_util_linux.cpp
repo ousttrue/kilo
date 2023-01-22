@@ -12,7 +12,7 @@
 #include <unistd.h>
 
 // Is terminal raw mode enabled?
-bool rawmode = false;
+bool g_rawmode = false;
 
 /* Use the ESC [6n escape sequence to query the horizontal cursor position
  * and return it. On error -1 is returned, on success the position of the
@@ -87,21 +87,21 @@ failed:
 
 static struct termios orig_termios; /* In order to restore at exit.*/
 
-void disableRawMode(int fd) {
-  if (g_E->rawmode) {
-  /* Don't even check the return value as it's too late. */
-  tcsetattr(fd, TCSAFLUSH, &orig_termios);
-    g_E->rawmode = 0;
+void disableRawMode() {
+  if (g_rawmode) {
+    /* Don't even check the return value as it's too late. */
+    tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
+    g_rawmode = false;
   }
 }
 
 /* Raw mode: 1960 magic shit. */
-int enableRawMode(int fd) {
+bool enableRawMode() {
   struct termios raw;
 
   if (!isatty(STDIN_FILENO))
     goto fatal;
-  if (tcgetattr(fd, &orig_termios) == -1)
+  if (tcgetattr(STDIN_FILENO, &orig_termios) == -1)
     goto fatal;
 
   raw = orig_termios; /* modify the original mode */
@@ -120,14 +120,14 @@ int enableRawMode(int fd) {
   raw.c_cc[VTIME] = 1; /* 100 ms timeout (unit is tens of second). */
 
   /* put terminal in raw mode after flushing */
-  if (tcsetattr(fd, TCSAFLUSH, &raw) < 0)
+  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) < 0)
     goto fatal;
-  E.rawmode = 1;
-  return 0;
+  g_rawmode = true;
+  return true;
 
 fatal:
   errno = ENOTTY;
-  return -1;
+  return false;
 }
 
 static bool g_sigwinch = false;
@@ -220,7 +220,7 @@ EscapeSequence g_seq;
 InputEvent InputEvent::get() {
   if (g_sigwinch) {
     g_sigwinch = false;
-    if (auto size = getTermSize(STDIN_FILENO, STDOUT_FILENO)) {
+    if (auto size = getTermSize()) {
       return {
           .type = InputEventType::Resize,
           .size = *size,
