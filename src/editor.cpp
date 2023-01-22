@@ -1,8 +1,7 @@
 #include "editor.h"
 #include "append_buffer.h"
 #include "erow.h"
-#include "get_termsize.h"
-#include "kilo.h"
+#include "term_util.h"
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h> // open
@@ -127,7 +126,8 @@ void editorConfig::editorMoveCursor(int key) {
 
 #define KILO_QUERY_LEN 256
 
-void editorConfig::editorFind(int fd) {
+void editorConfig::editorFind(int fd,
+                              const std::function<int(int fd)> &readKey) {
   char query[KILO_QUERY_LEN + 1] = {0};
   int qlen = 0;
   int last_match = -1;    /* Last line where a match was found. -1 for none. */
@@ -152,7 +152,7 @@ void editorConfig::editorFind(int fd) {
     editorSetStatusMessage("Search: %s (Use ESC/Arrows/Enter)", query);
     editorRefreshScreen();
 
-    int c = editorReadKey(fd);
+    int c = readKey(fd);
     if (c == DEL_KEY || c == CTRL_H || c == BACKSPACE) {
       if (qlen != 0)
         query[--qlen] = '\0';
@@ -819,6 +819,27 @@ int editorConfig::editorOpen(const char *filename) {
   this->dirty = 0;
   return 0;
 }
+
+/* =========================== Syntax highlights DB =========================
+ *
+ * In order to add a new syntax, define two arrays with a list of file name
+ * matches and keywords. The file name matches are used in order to match
+ * a given syntax with a given file name: if a match pattern starts with a
+ * dot, it is matched as the last past of the filename, for example ".c".
+ * Otherwise the pattern is just searched inside the filenme, like "Makefile").
+ *
+ * The list of keywords to highlight is just a list of words, however if they
+ * a trailing '|' character is added at the end, they are highlighted in
+ * a different color, so that you can have two different sets of keywords.
+ *
+ * Finally add a stanza in the HLDB global variable with two two arrays
+ * of strings, and a set of flags in order to enable highlighting of
+ * comments and numbers.
+ *
+ * The characters for single and multi line comments must be exactly two
+ * and must be provided as well (see the C language example).
+ *
+ * There is no support to highlight patterns currently. */
 
 /* C / C++ */
 const char *C_HL_extensions[] = {".c", ".h", ".cpp", ".hpp", ".cc", NULL};

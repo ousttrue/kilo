@@ -2,10 +2,9 @@ executable(
     'kilo',
     [
         'main.cpp',
-        'kilo.cpp',
         'editor.cpp',
         'erow.cpp',
-        'get_termsize.cpp',
+        'term_util.cpp',
         'append_buffer.cpp',
     ],
     install: true,
