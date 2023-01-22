@@ -1,4 +1,5 @@
 #pragma once
+#include "term_util.h"
 #include <functional>
 #include <time.h>
 
@@ -34,11 +35,10 @@ enum KEY_ACTION {
 };
 
 struct editorConfig {
-  int cx, cy;       /* Cursor x and y position in characters */
-  int rowoff;       /* Offset of row displayed. */
-  int coloff;       /* Offset of column displayed. */
-  int screenrows;   /* Number of rows that we can show */
-  int screencols;   /* Number of cols that we can show */
+  int cx, cy; /* Cursor x and y position in characters */
+  int rowoff; /* Offset of row displayed. */
+  int coloff; /* Offset of column displayed. */
+  TermSize screen;
   int numrows;      /* Number of rows */
   int rawmode;      /* Is terminal raw mode enabled? */
   struct erow *row; /* Rows */
@@ -49,6 +49,15 @@ struct editorConfig {
   const struct editorSyntax *syntax; /* Current syntax highlight, or NULL. */
 
   void init();
+
+  void setScreenSize(const TermSize &size) {
+    screen = size;
+    screen.rows -= 2; /* Get room for status bar. */
+    if (cy > screen.rows)
+      cy = screen.rows - 1;
+    if (cx > screen.cols)
+      cx = screen.cols - 1;
+  }
 
   void editorUpdateRow(erow *row);
   void editorInsertRow(int at, const char *s, size_t len);

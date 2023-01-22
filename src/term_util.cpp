@@ -38,9 +38,10 @@ static int getCursorPosition(int ifd, int ofd, int *rows, int *cols) {
 /* Try to get the number of columns in the current terminal. If the ioctl()
  * call fails the function will try to query the terminal itself.
  * Returns 0 on success, -1 on error. */
-int getTermSize(int ifd, int ofd, int *rows, int *cols) {
+std::optional<TermSize> getTermSize(int ifd, int ofd) {
   struct winsize ws;
 
+  TermSize size{};
   if (ioctl(1, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
     /* ioctl() failed. Try to query the terminal itself. */
     int orig_row, orig_col, retval;
@@ -53,7 +54,7 @@ int getTermSize(int ifd, int ofd, int *rows, int *cols) {
     /* Go to right/bottom margin and get position. */
     if (write(ofd, "\x1b[999C\x1b[999B", 12) != 12)
       goto failed;
-    retval = getCursorPosition(ifd, ofd, rows, cols);
+    retval = getCursorPosition(ifd, ofd, &size.rows, &size.cols);
     if (retval == -1)
       goto failed;
 
@@ -63,15 +64,15 @@ int getTermSize(int ifd, int ofd, int *rows, int *cols) {
     if (write(ofd, seq, strlen(seq)) == -1) {
       /* Can't recover... */
     }
-    return 0;
+    return size;
   } else {
-    *cols = ws.ws_col;
-    *rows = ws.ws_row;
-    return 0;
+    size.cols = ws.ws_col;
+    size.rows = ws.ws_row;
+    return size;
   }
 
 failed:
-  return -1;
+  return {};
 }
 
 static struct termios orig_termios; /* In order to restore at exit.*/

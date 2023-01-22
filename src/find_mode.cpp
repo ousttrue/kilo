@@ -87,8 +87,8 @@ bool FindMode::dispatch(int c) {
       E.rowoff = current;
       E.coloff = 0;
       /* Scroll horizontally as needed. */
-      if (E.cx > E.screencols) {
-        int diff = E.cx - E.screencols;
+      if (E.cx > E.screen.cols) {
+        int diff = E.cx - E.screen.cols;
         E.cx -= diff;
         E.coloff += diff;
       }

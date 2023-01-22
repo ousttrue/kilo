@@ -5,31 +5,13 @@
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h> // open
-#include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 struct editorConfig E;
-
-static void updateWindowSize(void) {
-  if (getTermSize(STDIN_FILENO, STDOUT_FILENO, &E.screenrows, &E.screencols) ==
-      -1) {
-    perror("Unable to query the screen for size (columns / rows)");
-    exit(1);
-  }
-  E.screenrows -= 2; /* Get room for status bar. */
-}
-
-static void handleSigWinCh(int unused __attribute__((unused))) {
-  updateWindowSize();
-  if (E.cy > E.screenrows)
-    E.cy = E.screenrows - 1;
-  if (E.cx > E.screencols)
-    E.cx = E.screencols - 1;
-  E.editorRefreshScreen();
-}
 
 void editorConfig::init() {
   this->cx = 0;
@@ -41,8 +23,6 @@ void editorConfig::init() {
   this->dirty = 0;
   this->filename = NULL;
   this->syntax = NULL;
-  updateWindowSize();
-  signal(SIGWINCH, handleSigWinCh);
 }
 
 /* ========================= Editor events handling  ======================== */
@@ -63,9 +43,9 @@ void editorConfig::editorMoveCursor(int key) {
         if (filerow > 0) {
           this->cy--;
           this->cx = this->row[filerow - 1].size;
-          if (this->cx > this->screencols - 1) {
-            this->coloff = this->cx - this->screencols + 1;
-            this->cx = this->screencols - 1;
+          if (this->cx > this->screen.cols - 1) {
+            this->coloff = this->cx - this->screen.cols + 1;
+            this->cx = this->screen.cols - 1;
           }
         }
       }
@@ -75,7 +55,7 @@ void editorConfig::editorMoveCursor(int key) {
     break;
   case ARROW_RIGHT:
     if (row && filecol < row->size) {
-      if (this->cx == this->screencols - 1) {
+      if (this->cx == this->screen.cols - 1) {
         this->coloff++;
       } else {
         this->cx += 1;
@@ -83,7 +63,7 @@ void editorConfig::editorMoveCursor(int key) {
     } else if (row && filecol == row->size) {
       this->cx = 0;
       this->coloff = 0;
-      if (this->cy == this->screenrows - 1) {
+      if (this->cy == this->screen.rows - 1) {
         this->rowoff++;
       } else {
         this->cy += 1;
@@ -100,7 +80,7 @@ void editorConfig::editorMoveCursor(int key) {
     break;
   case ARROW_DOWN:
     if (filerow < this->numrows) {
-      if (this->cy == this->screenrows - 1) {
+      if (this->cy == this->screen.rows - 1) {
         this->rowoff++;
       } else {
         this->cy += 1;
@@ -132,16 +112,16 @@ void editorConfig::editorRefreshScreen(void) {
 
   ab.abAppend("\x1b[?25l", 6); /* Hide cursor. */
   ab.abAppend("\x1b[H", 3);    /* Go home. */
-  for (y = 0; y < E.screenrows; y++) {
+  for (y = 0; y < E.screen.rows; y++) {
     int filerow = E.rowoff + y;
 
     if (filerow >= E.numrows) {
-      if (E.numrows == 0 && y == E.screenrows / 3) {
+      if (E.numrows == 0 && y == E.screen.rows / 3) {
         char welcome[80];
         int welcomelen =
             snprintf(welcome, sizeof(welcome),
                      "Kilo editor -- verison %s\x1b[0K\r\n", KILO_VERSION);
-        int padding = (E.screencols - welcomelen) / 2;
+        int padding = (E.screen.cols - welcomelen) / 2;
         if (padding) {
           ab.abAppend("~", 1);
           padding--;
@@ -160,8 +140,8 @@ void editorConfig::editorRefreshScreen(void) {
     int len = r->rsize - E.coloff;
     int current_color = -1;
     if (len > 0) {
-      if (len > E.screencols)
-        len = E.screencols;
+      if (len > E.screen.cols)
+        len = E.screen.cols;
       char *c = r->render + E.coloff;
       auto hl = r->hl + E.coloff;
       int j;
@@ -206,11 +186,11 @@ void editorConfig::editorRefreshScreen(void) {
                      E.numrows, E.dirty ? "(modified)" : "");
   int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", E.rowoff + E.cy + 1,
                       E.numrows);
-  if (len > E.screencols)
-    len = E.screencols;
+  if (len > E.screen.cols)
+    len = E.screen.cols;
   ab.abAppend(status, len);
-  while (len < E.screencols) {
-    if (E.screencols - len == rlen) {
+  while (len < E.screen.cols) {
+    if (E.screen.cols - len == rlen) {
       ab.abAppend(rstatus, rlen);
       break;
     } else {
@@ -224,7 +204,7 @@ void editorConfig::editorRefreshScreen(void) {
   ab.abAppend("\x1b[0K", 4);
   int msglen = strlen(E.statusmsg);
   if (msglen && time(NULL) - E.statusmsg_time < 5)
-    ab.abAppend(E.statusmsg, msglen <= E.screencols ? msglen : E.screencols);
+    ab.abAppend(E.statusmsg, msglen <= E.screen.cols ? msglen : E.screen.cols);
 
   /* Put cursor at its current position. Note that the horizontal position
    * at which the cursor is displayed may be different compared to 'E.cx'
@@ -518,7 +498,7 @@ void editorConfig::editorInsertChar(int c) {
   }
   row = &this->row[filerow];
   editorRowInsertChar(row, filecol, c);
-  if (this->cx == this->screencols - 1)
+  if (this->cx == this->screen.cols - 1)
     this->coloff++;
   else
     this->cx++;
@@ -554,7 +534,7 @@ void editorConfig::editorInsertNewline(void) {
     editorUpdateRow(row);
   }
 fixcursor:
-  if (this->cy == this->screenrows - 1) {
+  if (this->cy == this->screen.rows - 1) {
     this->rowoff++;
   } else {
     this->cy++;
@@ -583,8 +563,8 @@ void editorConfig::editorDelChar() {
     else
       this->cy--;
     this->cx = filecol;
-    if (this->cx >= this->screencols) {
-      int shift = (this->screencols - this->cx) + 1;
+    if (this->cx >= this->screen.cols) {
+      int shift = (this->screen.cols - this->cx) + 1;
       this->cx -= shift;
       this->coloff += shift;
     }

@@ -5,6 +5,7 @@
 #include "term_util.h"
 #include <memory>
 #include <optional>
+#include <signal.h>
 #include <stack>
 #include <stdio.h>
 #include <unistd.h> // STDIN_FILENO
@@ -117,8 +118,7 @@ bool editorProcessKeypress(int c) {
     E.editorSave();
     break;
   case CTRL_F:
-  case CTRL_G:
-   {
+  case CTRL_G: {
     auto find = std::make_shared<FindMode>(E);
     g_stack.push(Mode{
         .dispatch = [find](int c) { return find->dispatch(c); },
@@ -134,10 +134,10 @@ bool editorProcessKeypress(int c) {
   case PAGE_DOWN:
     if (c == PAGE_UP && E.cy != 0)
       E.cy = 0;
-    else if (c == PAGE_DOWN && E.cy != E.screenrows - 1)
-      E.cy = E.screenrows - 1;
+    else if (c == PAGE_DOWN && E.cy != E.screen.rows - 1)
+      E.cy = E.screen.rows - 1;
     {
-      int times = E.screenrows;
+      int times = E.screen.rows;
       while (times--)
         E.editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
     }
@@ -172,6 +172,16 @@ void editorAtExit(void) {
   }
 }
 
+static void handleSigWinCh(int) {
+  if (auto size = getTermSize(STDIN_FILENO, STDOUT_FILENO)) {
+    E.setScreenSize(*size);
+  } else {
+    perror("Unable to query the screen for size (columns / rows)");
+    exit(1);
+  }
+  E.editorRefreshScreen();
+}
+
 int main(int argc, char **argv) {
   if (argc != 2) {
     fprintf(stderr, "Usage: kilo <filename>\n");
@@ -179,17 +189,25 @@ int main(int argc, char **argv) {
   }
 
   E.init();
+  signal(SIGWINCH, handleSigWinCh);
+  if (auto size = getTermSize(STDIN_FILENO, STDOUT_FILENO)) {
+    E.setScreenSize(*size);
+  } else {
+    perror("Unable to query the screen for size (columns / rows)");
+    exit(1);
+  }
+
   E.syntax = editorSelectSyntaxHighlight(argv[1]);
   E.editorOpen(argv[1]);
   enableRawMode(STDIN_FILENO);
   E.rawmode = 1;
-  // atexit(editorAtExit);
+  atexit(editorAtExit);
 
   E.editorSetStatusMessage(
       "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find");
 
   g_stack.push({&editorProcessKeypress});
-  while (1) {
+  while (!g_stack.empty()) {
     E.editorRefreshScreen();
 
     g_stack.top().prev();
