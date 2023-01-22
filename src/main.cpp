@@ -24,7 +24,7 @@ void editorProcessKeypress(int fd) {
   case CTRL_Q: /* Ctrl-q */
     /* Quit if the file was already saved. */
     if (E.dirty && quit_times) {
-      editorSetStatusMessage("WARNING!!! File has unsaved changes. "
+      E.editorSetStatusMessage("WARNING!!! File has unsaved changes. "
                              "Press Ctrl-Q %d more times to quit.",
                              quit_times);
       quit_times--;
@@ -86,9 +86,9 @@ int main(int argc, char **argv) {
   editorSelectSyntaxHighlight(argv[1]);
   editorOpen(argv[1]);
   enableRawMode(STDIN_FILENO);
-  editorSetStatusMessage("HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find");
+  E.editorSetStatusMessage("HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find");
   while (1) {
-    editorRefreshScreen();
+    E.editorRefreshScreen();
     editorProcessKeypress(STDIN_FILENO);
   }
   return 0;

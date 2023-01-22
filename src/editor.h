@@ -1,4 +1,5 @@
 #pragma once
+#include "kilo.h"
 #include <time.h>
 
 /* This structure represents a single line of the file we are editing. */
@@ -8,7 +9,7 @@ struct erow {
   int rsize;         /* Size of the rendered row. */
   char *chars;       /* Row content. */
   char *render;      /* Row content "rendered" for screen (for TABs). */
-  unsigned char *hl; /* Syntax highlight type for each character in render.*/
+  HighLightTypes *hl; /* Syntax highlight type for each character in render.*/
   int hl_oc;         /* Row had open comment at end in last syntax highlight
                         check. */
 };
@@ -32,7 +33,8 @@ struct editorConfig {
 
   // Handle cursor position change because arrow keys were pressed.
   void editorMoveCursor(int key);
-
+  void editorSetStatusMessage(const char *fmt, ...);
+  void editorRefreshScreen(void);
   void editorFind(int fd);
 };
 

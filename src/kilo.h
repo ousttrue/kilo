@@ -1,4 +1,6 @@
 #pragma once
+#define KILO_VERSION "0.0.1"
+#include <stdint.h>
 
 enum KEY_ACTION {
   KEY_NULL = 0,    /* NULL */
@@ -28,7 +30,7 @@ enum KEY_ACTION {
 };
 
 /* Syntax highlight types */
-enum HighLightTypes {
+enum HighLightTypes: uint8_t {
   HL_NORMAL = 0,
   HL_NONPRINT = 1,
   HL_COMMENT = 2,   /* Single line comment. */
@@ -39,12 +41,30 @@ enum HighLightTypes {
   HL_NUMBER = 7,
   HL_MATCH = 8, /* Search match. */
 };
+/* Maps syntax highlight token types to terminal colors. */
+inline int editorSyntaxToColor(HighLightTypes hl) {
+  switch (hl) {
+  case HL_COMMENT:
+  case HL_MLCOMMENT:
+    return 36; /* cyan */
+  case HL_KEYWORD1:
+    return 33; /* yellow */
+  case HL_KEYWORD2:
+    return 32; /* green */
+  case HL_STRING:
+    return 35; /* magenta */
+  case HL_NUMBER:
+    return 31; /* red */
+  case HL_MATCH:
+    return 34; /* blu */
+  default:
+    return 37; /* white */
+  }
+}
 
 void editorSelectSyntaxHighlight(char *filename);
 int editorOpen(char *filename);
 int enableRawMode(int fd);
-void editorSetStatusMessage(const char *fmt, ...);
-void editorRefreshScreen(void);
 void editorProcessKeypress(int fd);
 int editorReadKey(int fd);
 void editorInsertNewline(void);
