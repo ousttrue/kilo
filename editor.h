@@ -22,7 +22,7 @@ struct editorConfig {
   int numrows;    /* Number of rows */
   int rawmode;    /* Is terminal raw mode enabled? */
   erow *row;      /* Rows */
-  int dirty;      /* File modified but not saved. */
+  int dirty = 0;  /* File modified but not saved. */
   char *filename; /* Currently open filename */
   char statusmsg[80];
   time_t statusmsg_time;
