@@ -10,7 +10,7 @@
             "request": "launch",
             "program": "${workspaceFolder}/prefix/bin/kilo",
             "args": [
-                "src/kilo.cpp"
+                "src/editor.cpp"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

@@ -1,4 +1,5 @@
 #include "editor.h"
+#include "syntax_highlight.h"
 #include "term_util.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -161,7 +162,7 @@ int main(int argc, char **argv) {
   }
 
   E.init();
-  E.editorSelectSyntaxHighlight(argv[1]);
+  E.syntax = editorSelectSyntaxHighlight(argv[1]);
   E.editorOpen(argv[1]);
   enableRawMode(STDIN_FILENO);
   // if (E.rawmode)

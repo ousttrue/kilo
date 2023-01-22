@@ -32,15 +32,6 @@ enum KEY_ACTION {
   PAGE_DOWN
 };
 
-struct editorSyntax {
-  const char **filematch;
-  const char **keywords;
-  char singleline_comment_start[2];
-  char multiline_comment_start[3];
-  char multiline_comment_end[3];
-  int flags;
-};
-
 struct editorConfig {
   int cx, cy;       /* Cursor x and y position in characters */
   int rowoff;       /* Offset of row displayed. */
@@ -54,7 +45,7 @@ struct editorConfig {
   char *filename;   /* Currently open filename */
   char statusmsg[80];
   time_t statusmsg_time;
-  editorSyntax *syntax; /* Current syntax highlight, or NULL. */
+  const struct editorSyntax *syntax; /* Current syntax highlight, or NULL. */
 
   void init();
 
@@ -70,7 +61,6 @@ struct editorConfig {
   void editorInsertNewline(void);
   void editorDelChar();
 
-  void editorSelectSyntaxHighlight(const char *filename);
   void editorMoveCursor(int key);
   void editorSetStatusMessage(const char *fmt, ...);
   void editorRefreshScreen(void);

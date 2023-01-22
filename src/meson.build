@@ -6,6 +6,7 @@ executable(
         'erow.cpp',
         'term_util.cpp',
         'append_buffer.cpp',
+        'syntax_highlight.cpp',
     ],
     install: true,
 )

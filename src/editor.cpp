@@ -413,23 +413,21 @@ void editorConfig::editorUpdateSyntax(erow *row) {
   if (this->syntax == NULL)
     return; /* No syntax, everything is HL_NORMAL. */
 
-  int i, prev_sep, in_string, in_comment;
-  char *p;
   const char **keywords = this->syntax->keywords;
-  char *scs = this->syntax->singleline_comment_start;
-  char *mcs = this->syntax->multiline_comment_start;
-  char *mce = this->syntax->multiline_comment_end;
+  auto scs = this->syntax->singleline_comment_start;
+  auto mcs = this->syntax->multiline_comment_start;
+  auto mce = this->syntax->multiline_comment_end;
 
   /* Point to the first non-space char. */
-  p = row->render;
-  i = 0; /* Current char offset */
+  auto p = row->render;
+  int i = 0; /* Current char offset */
   while (*p && isspace(*p)) {
     p++;
     i++;
   }
-  prev_sep = 1;   /* Tell the parser if 'i' points to start of word. */
-  in_string = 0;  /* Are we inside "" or '' ? */
-  in_comment = 0; /* Are we inside multi-line comment? */
+  int prev_sep = 1;   /* Tell the parser if 'i' points to start of word. */
+  int in_string = 0;  /* Are we inside "" or '' ? */
+  int in_comment = 0; /* Are we inside multi-line comment? */
 
   /* If the previous line has an open comment, this line starts
    * with an open comment state. */
@@ -818,80 +816,4 @@ int editorConfig::editorOpen(const char *filename) {
   fclose(fp);
   this->dirty = 0;
   return 0;
-}
-
-/* =========================== Syntax highlights DB =========================
- *
- * In order to add a new syntax, define two arrays with a list of file name
- * matches and keywords. The file name matches are used in order to match
- * a given syntax with a given file name: if a match pattern starts with a
- * dot, it is matched as the last past of the filename, for example ".c".
- * Otherwise the pattern is just searched inside the filenme, like "Makefile").
- *
- * The list of keywords to highlight is just a list of words, however if they
- * a trailing '|' character is added at the end, they are highlighted in
- * a different color, so that you can have two different sets of keywords.
- *
- * Finally add a stanza in the HLDB global variable with two two arrays
- * of strings, and a set of flags in order to enable highlighting of
- * comments and numbers.
- *
- * The characters for single and multi line comments must be exactly two
- * and must be provided as well (see the C language example).
- *
- * There is no support to highlight patterns currently. */
-
-/* C / C++ */
-const char *C_HL_extensions[] = {".c", ".h", ".cpp", ".hpp", ".cc", NULL};
-const char *C_HL_keywords[] = {
-    /* C Keywords */
-    "auto", "break", "case", "continue", "default", "do", "else", "enum",
-    "extern", "for", "goto", "if", "register", "return", "sizeof", "static",
-    "struct", "switch", "typedef", "union", "volatile", "while", "NULL",
-
-    /* C++ Keywords */
-    "alignas", "alignof", "and", "and_eq", "asm", "bitand", "bitor", "class",
-    "compl", "constexpr", "const_cast", "deltype", "delete", "dynamic_cast",
-    "explicit", "export", "false", "friend", "inline", "mutable", "namespace",
-    "new", "noexcept", "not", "not_eq", "nullptr", "operator", "or", "or_eq",
-    "private", "protected", "public", "reinterpret_cast", "static_assert",
-    "static_cast", "template", "this", "thread_local", "throw", "true", "try",
-    "typeid", "typename", "virtual", "xor", "xor_eq",
-
-    /* C types */
-    "int|", "long|", "double|", "float|", "char|", "unsigned|", "signed|",
-    "void|", "short|", "auto|", "const|", "bool|", NULL};
-
-#define HL_HIGHLIGHT_STRINGS (1 << 0)
-#define HL_HIGHLIGHT_NUMBERS (1 << 1)
-
-/* Here we define an array of syntax highlights by extensions, keywords,
- * comments delimiters and flags. */
-struct editorSyntax HLDB[] = {{/* C / C++ */
-                               C_HL_extensions,
-                               C_HL_keywords,
-                               {'/', '/'},
-                               {'/', '*'},
-                               {'*', '/'},
-                               HL_HIGHLIGHT_STRINGS | HL_HIGHLIGHT_NUMBERS}};
-
-#define HLDB_ENTRIES (sizeof(HLDB) / sizeof(HLDB[0]))
-
-/* Select the syntax highlight scheme depending on the filename,
- * setting it in the global state E.syntax. */
-void editorConfig::editorSelectSyntaxHighlight(const char *filename) {
-  for (unsigned int j = 0; j < HLDB_ENTRIES; j++) {
-    struct editorSyntax *s = HLDB + j;
-    unsigned int i = 0;
-    while (s->filematch[i]) {
-      int patlen = strlen(s->filematch[i]);
-      if (auto p = strstr(filename, s->filematch[i])) {
-        if (s->filematch[i][0] != '.' || p[patlen] == '\0') {
-          E.syntax = s;
-          return;
-        }
-      }
-      i++;
-    }
-  }
 }
