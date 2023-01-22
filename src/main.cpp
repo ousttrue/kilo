@@ -8,7 +8,6 @@
 #include <signal.h>
 #include <stack>
 #include <stdio.h>
-#include <unistd.h> // STDIN_FILENO
 
 /* Read a key from the terminal put in raw mode, trying to handle
  * escape sequences. */
@@ -190,10 +189,9 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  editorConfig E;
+  editorConfig E = {};
   g_E = &E;
 
-  E.init();
   signal(SIGWINCH, handleSigWinCh);
   if (auto size = getTermSize(STDIN_FILENO, STDOUT_FILENO)) {
     E.setScreenSize(*size);
@@ -213,8 +211,10 @@ int main(int argc, char **argv) {
 
   g_stack.push({[&E](int c) { return editorProcessKeypress(E, c); }});
   while (!g_stack.empty()) {
+    // display
     E.editorRefreshScreen();
 
+    // update
     g_stack.top().prev();
     if (auto c = editorReadKey(STDIN_FILENO)) {
       if (!g_stack.top().dispatch(*c)) {

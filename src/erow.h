@@ -1,6 +1,7 @@
 #pragma once
-#include <stdint.h>
 #include "syntax_highlight.h"
+#include <stdint.h>
+#include <string_view>
 
 /* This structure represents a single line of the file we are editing. */
 struct erow {
@@ -15,4 +16,5 @@ struct erow {
 
   void editorFreeRow();
   int editorRowHasOpenComment() const;
+  std::string_view view() const { return {chars, chars + size}; }
 };

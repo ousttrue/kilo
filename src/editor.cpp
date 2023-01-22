@@ -1,29 +1,11 @@
 #include "editor.h"
 #include "append_buffer.h"
 #include "erow.h"
-#include "term_util.h"
-#include <ctype.h>
-#include <errno.h>
-#include <fcntl.h> // open
+#include <fstream>
+#include <sstream>
 #include <stdarg.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-
-void editorConfig::init() {
-  this->cx = 0;
-  this->cy = 0;
-  this->rowoff = 0;
-  this->coloff = 0;
-  this->numrows = 0;
-  this->row = NULL;
-  this->dirty = 0;
-  this->filename = NULL;
-  this->syntax = NULL;
-}
-
-/* ========================= Editor events handling  ======================== */
 
 /* Handle cursor position change because arrow keys were pressed. */
 void editorConfig::editorMoveCursor(int key) {
@@ -180,10 +162,11 @@ void editorConfig::editorRefreshScreen(void) {
   ab.abAppend("\x1b[0K", 4);
   ab.abAppend("\x1b[7m", 4);
   char status[80], rstatus[80];
-  int len = snprintf(status, sizeof(status), "%.20s - %d lines %s", this->filename,
-                     this->numrows, this->dirty ? "(modified)" : "");
-  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", this->rowoff + this->cy + 1,
-                      this->numrows);
+  int len = snprintf(status, sizeof(status), "%.20s - %d lines %s",
+                     this->filename.c_str(), this->numrows,
+                     this->dirty ? "(modified)" : "");
+  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d",
+                      this->rowoff + this->cy + 1, this->numrows);
   if (len > this->screen.cols)
     len = this->screen.cols;
   ab.abAppend(status, len);
@@ -198,11 +181,13 @@ void editorConfig::editorRefreshScreen(void) {
   }
   ab.abAppend("\x1b[0m\r\n", 6);
 
-  /* Second row depends on this->statusmsg and the status message update time. */
+  /* Second row depends on this->statusmsg and the status message update time.
+   */
   ab.abAppend("\x1b[0K", 4);
   int msglen = strlen(this->statusmsg);
   if (msglen && time(NULL) - this->statusmsg_time < 5)
-    ab.abAppend(this->statusmsg, msglen <= this->screen.cols ? msglen : this->screen.cols);
+    ab.abAppend(this->statusmsg,
+                msglen <= this->screen.cols ? msglen : this->screen.cols);
 
   /* Put cursor at its current position. Note that the horizontal position
    * at which the cursor is displayed may be different compared to 'this->cx'
@@ -221,7 +206,8 @@ void editorConfig::editorRefreshScreen(void) {
   snprintf(buf, sizeof(buf), "\x1b[%d;%dH", this->cy + 1, cx);
   ab.abAppend(buf, strlen(buf));
   ab.abAppend("\x1b[?25h", 6); /* Show cursor. */
-  write(STDOUT_FILENO, ab.b, ab.len);
+  fwrite(ab.b, ab.len, 1, stdout);
+  fflush(stdout);
   ab.abFree();
 }
 
@@ -582,26 +568,28 @@ void editorConfig::editorDelChar() {
  * Returns the pointer to the heap-allocated string and populate the
  * integer pointed by 'buflen' with the size of the string, escluding
  * the final nulterm. */
-char *editorConfig::editorRowsToString(int *buflen) {
-  char *buf = NULL, *p;
-  int totlen = 0;
-  int j;
+std::string editorConfig::editorRowsToString() const {
+  // char *buf = NULL, *p;
+  // int totlen = 0;
+  // int j;
 
   /* Compute count of bytes */
-  for (j = 0; j < this->numrows; j++)
-    totlen += this->row[j].size + 1; /* +1 is for "\n" at end of every row */
-  *buflen = totlen;
-  totlen++; /* Also make space for nulterm */
+  // for (int j = 0; j < this->numrows; j++)
+  //   totlen += this->row[j].size + 1; /* +1 is for "\n" at end of every row */
+  // *buflen = totlen;
+  // totlen++; /* Also make space for nulterm */
 
-  p = buf = (char *)malloc(totlen);
-  for (j = 0; j < this->numrows; j++) {
-    memcpy(p, this->row[j].chars, this->row[j].size);
-    p += this->row[j].size;
-    *p = '\n';
-    p++;
+  // p = buf = (char *)malloc(totlen);
+  std::stringstream ss;
+  for (int j = 0; j < this->numrows; j++) {
+    ss << row[j].view();
   }
-  *p = '\0';
-  return buf;
+  //   p += this->row[j].size;
+  //   *p = '\n';
+  //   p++;
+  // }
+  // *p = '\0';
+  return ss.str();
 }
 
 /* Insert a row at the specified position, shifting the other rows on the bottom
@@ -630,62 +618,50 @@ void editorConfig::editorInsertRow(int at, const char *s, size_t len) {
 }
 
 /* Save the current file on disk. Return 0 on success, 1 on error. */
-int editorConfig::editorSave(void) {
-  int len;
-  char *buf = editorRowsToString(&len);
-  int fd = open(this->filename, O_RDWR | O_CREAT, 0644);
-  if (fd == -1)
-    goto writeerr;
+bool editorConfig::editorSave(void) {
+  // int len;
+  auto buf = editorRowsToString();
 
-  /* Use truncate + a single write(2) call in order to make saving
-   * a bit safer, under the limits of what we can do in a small editor. */
-  if (ftruncate(fd, len) == -1)
-    goto writeerr;
-  if (write(fd, buf, len) != len)
-    goto writeerr;
+  auto os = std::ofstream(this->filename, std::ios::binary);
+  if (!os) {
+    this->editorSetStatusMessage("Can't save! I/O error: %s", strerror(errno));
+    return false;
+  }
 
-  close(fd);
-  free(buf);
+  os.write(buf.data(), buf.size());
+
   this->dirty = 0;
-  this->editorSetStatusMessage("%d bytes written on disk", len);
-  return 0;
-
-writeerr:
-  free(buf);
-  if (fd != -1)
-    close(fd);
-  this->editorSetStatusMessage("Can't save! I/O error: %s", strerror(errno));
-  return 1;
+  this->editorSetStatusMessage("%zu bytes written on disk", buf.size());
+  return true;
 }
 
 /* Load the specified program in the editor memory and returns 0 on success
  * or 1 on error. */
-int editorConfig::editorOpen(const char *filename) {
+bool editorConfig::editorOpen(const char *filename) {
   this->dirty = 0;
-  free(this->filename);
-  size_t fnlen = strlen(filename) + 1;
-  this->filename = (char *)malloc(fnlen);
-  memcpy(this->filename, filename, fnlen);
+  this->filename = filename;
 
-  auto fp = fopen(filename, "r");
-  if (!fp) {
-    if (errno != ENOENT) {
-      perror("Opening file");
-      exit(1);
+  auto is = std::ifstream(filename);
+  if (!is) {
+    return false;
+  }
+
+  std::string line;
+  while (std::getline(is, line)) {
+    auto size = line.size();
+    if (line.ends_with("\r\n")) {
+      size -= 2;
+    } else if (line.ends_with("\n\r")) {
+      size -= 2;
+
+    } else if (line.ends_with("\n")) {
+      size -= 1;
+
+    } else if (line.ends_with("\r")) {
+      size -= 1;
     }
-    return 1;
+    editorInsertRow(this->numrows, line.data(), size);
   }
-
-  char *line = NULL;
-  size_t linecap = 0;
-  ssize_t linelen;
-  while ((linelen = getline(&line, &linecap, fp)) != -1) {
-    if (linelen && (line[linelen - 1] == '\n' || line[linelen - 1] == '\r'))
-      line[--linelen] = '\0';
-    editorInsertRow(this->numrows, line, linelen);
-  }
-  free(line);
-  fclose(fp);
   this->dirty = 0;
-  return 0;
+  return true;
 }
