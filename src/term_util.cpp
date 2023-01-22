@@ -1,5 +1,9 @@
 #include "term_util.h"
+#include <assert.h>
+#include <cstdint>
 #include <errno.h>
+#include <optional>
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/ioctl.h>
@@ -114,4 +118,142 @@ int enableRawMode(int fd) {
 fatal:
   errno = ENOTTY;
   return -1;
+}
+
+static bool g_sigwinch = false;
+
+static void handleSigWinCh(int) { g_sigwinch = true; }
+
+void InputEvent::initialize() { signal(SIGWINCH, handleSigWinCh); }
+
+//
+// https://learn.microsoft.com/ja-jp/windows/console/console-virtual-terminal-sequences
+//
+// Read a key from the terminal put in raw mode, trying to handle escape
+// sequences.
+struct EscapeSequence {
+  // ESC
+  char seq[4] = {0};
+  size_t pos = 0;
+
+  std::optional<KEY_ACTION> push(uint8_t b) {
+    assert(pos <= 3);
+    if (pos == 0) {
+      if (b == 27) {
+        seq[pos++] = b;
+      }
+      return {};
+    }
+    seq[pos++] = b;
+
+    if (pos == 3) {
+      if (seq[1] == '[' || seq[1] == 'O') {
+        switch (seq[2]) {
+        case 'A':
+          // ESC [ A
+          return ARROW_UP;
+        case 'B':
+          return ARROW_DOWN;
+        case 'C':
+          return ARROW_RIGHT;
+        case 'D':
+          return ARROW_LEFT;
+        case 'H':
+          return HOME_KEY;
+        case 'F':
+          return END_KEY;
+        case '0':
+        case '1':
+        case '2':
+        case '3':
+        case '4':
+        case '5':
+        case '6':
+        case '7':
+        case '8':
+        case '9':
+          break;
+
+        default:
+          // unknown
+          assert(false);
+          break;
+        }
+      }
+    } else if (pos == 4) {
+      if (seq[3] == '~') {
+        switch (seq[2]) {
+        case '3':
+          // ESC [ 3 ~
+          return DEL_KEY;
+        case '5':
+          // ESC [ 5 ~
+          return PAGE_UP;
+        case '6':
+          // ESC [ 6 ~
+          return PAGE_DOWN;
+
+        default:
+          clear();
+        }
+      }
+    }
+
+    return {};
+  }
+
+  void clear() { pos = 0; }
+};
+
+EscapeSequence g_seq;
+
+InputEvent InputEvent::get() {
+  if (g_sigwinch) {
+    g_sigwinch = false;
+    if (auto size = getTermSize(STDIN_FILENO, STDOUT_FILENO)) {
+      return {
+          .type = InputEventType::Resize,
+          .size = *size,
+      };
+    } else {
+      return {
+          .type = InputEventType::Error,
+      };
+    }
+  }
+
+  uint8_t b;
+  auto read_size = read(STDIN_FILENO, &b, 1);
+  if (read_size < 0) {
+    return {
+        .type = InputEventType::Error,
+    };
+  }
+
+  if (read_size == 0) {
+    g_seq.clear();
+    return {
+        .type = InputEventType::Error,
+    };
+  }
+
+  assert(read_size == 1);
+  if (auto action = g_seq.push(b)) {
+    g_seq.clear();
+    return {
+        .type = InputEventType::Action,
+        .action = *action,
+    };
+  } else {
+    if (g_seq.pos) {
+      return {
+          .type = InputEventType::Error,
+      };
+    } else {
+      return {
+          .type = InputEventType::Stdin,
+          .byte = b,
+      };
+    }
+  }
 }

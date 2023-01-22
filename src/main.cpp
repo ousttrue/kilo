@@ -5,79 +5,8 @@
 #include "term_util.h"
 #include <memory>
 #include <optional>
-#include <signal.h>
 #include <stack>
 #include <stdio.h>
-
-/* Read a key from the terminal put in raw mode, trying to handle
- * escape sequences. */
-std::optional<int> editorReadKey(int fd) {
-  int nread;
-  char c, seq[3];
-  while ((nread = read(fd, &c, 1)) == 0)
-    ;
-  if (nread == -1) {
-    return {};
-  }
-
-  while (1) {
-    switch (c) {
-    case ESC: /* escape sequence */
-      /* If this is just an ESC, we'll timeout here. */
-      if (read(fd, seq, 1) == 0)
-        return ESC;
-      if (read(fd, seq + 1, 1) == 0)
-        return ESC;
-
-      /* ESC [ sequences. */
-      if (seq[0] == '[') {
-        if (seq[1] >= '0' && seq[1] <= '9') {
-          /* Extended escape, read additional byte. */
-          if (read(fd, seq + 2, 1) == 0)
-            return ESC;
-          if (seq[2] == '~') {
-            switch (seq[1]) {
-            case '3':
-              return DEL_KEY;
-            case '5':
-              return PAGE_UP;
-            case '6':
-              return PAGE_DOWN;
-            }
-          }
-        } else {
-          switch (seq[1]) {
-          case 'A':
-            return ARROW_UP;
-          case 'B':
-            return ARROW_DOWN;
-          case 'C':
-            return ARROW_RIGHT;
-          case 'D':
-            return ARROW_LEFT;
-          case 'H':
-            return HOME_KEY;
-          case 'F':
-            return END_KEY;
-          }
-        }
-      }
-
-      /* ESC O sequences. */
-      else if (seq[0] == 'O') {
-        switch (seq[1]) {
-        case 'H':
-          return HOME_KEY;
-        case 'F':
-          return END_KEY;
-        }
-      }
-      break;
-    default:
-      return c;
-    }
-  }
-}
 
 struct Mode {
   std::function<bool(int c)> dispatch;
@@ -173,16 +102,6 @@ void editorAtExit(void) {
   }
 }
 
-static void handleSigWinCh(int) {
-  if (auto size = getTermSize(STDIN_FILENO, STDOUT_FILENO)) {
-    g_E->setScreenSize(*size);
-  } else {
-    perror("Unable to query the screen for size (columns / rows)");
-    exit(1);
-  }
-  g_E->editorRefreshScreen();
-}
-
 int main(int argc, char **argv) {
   if (argc != 2) {
     fprintf(stderr, "Usage: kilo <filename>\n");
@@ -192,13 +111,14 @@ int main(int argc, char **argv) {
   editorConfig E = {};
   g_E = &E;
 
-  signal(SIGWINCH, handleSigWinCh);
   if (auto size = getTermSize(STDIN_FILENO, STDOUT_FILENO)) {
     E.setScreenSize(*size);
   } else {
     perror("Unable to query the screen for size (columns / rows)");
-    exit(1);
+    return 1;
   }
+
+  InputEvent::initialize();
 
   E.syntax = editorSelectSyntaxHighlight(argv[1]);
   E.editorOpen(argv[1]);
@@ -216,15 +136,39 @@ int main(int argc, char **argv) {
 
     // update
     g_stack.top().prev();
-    if (auto c = editorReadKey(STDIN_FILENO)) {
-      if (!g_stack.top().dispatch(*c)) {
+
+    // dipatch input event
+    auto event = InputEvent::get();
+    switch (event.type) {
+    case InputEventType::Stdin:
+      // dipatch key code
+      if (!g_stack.top().dispatch(event.byte)) {
         if (g_stack.empty()) {
           break;
         } else {
           g_stack.pop();
         }
       }
-    } else {
+      break;
+
+    case InputEventType::Action:
+      // dipatch key code
+      if (!g_stack.top().dispatch(event.action)) {
+        if (g_stack.empty()) {
+          break;
+        } else {
+          g_stack.pop();
+        }
+      }
+      break;
+
+    case InputEventType::Resize:
+      if (auto size = getTermSize(STDIN_FILENO, STDOUT_FILENO)) {
+        E.setScreenSize(*size);
+      }
+      break;
+
+    case InputEventType::Error:
       break;
     }
   }
