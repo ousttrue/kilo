@@ -193,6 +193,8 @@ int editorReadKey(int fd) {
             return c;
         }
     }
+
+    return 0;
 }
 
 
@@ -498,6 +500,9 @@ char *editorRowsToString(int *buflen) {
 /* Insert a character at the specified position in a row, moving the remaining
  * chars on the right if needed. */
 void editorRowInsertChar(erow *row, int at, int c) {
+    if(c==0){
+        return;
+    }
     if (at > row->size) {
         /* Pad the string with spaces if the insert location is outside the
          * current length by more than a single character. */
@@ -540,6 +545,9 @@ void editorRowDelChar(erow *row, int at) {
 
 /* Insert the specified char at the current prompt position. */
 void editorInsertChar(int c) {
+    if(c==0){
+      return;
+    }
     int filerow = E.rowoff+E.cy;
     int filecol = E.coloff+E.cx;
     erow *row = (filerow >= E.numrows) ? NULL : &E.row[filerow];
