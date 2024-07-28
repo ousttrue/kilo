@@ -148,21 +148,20 @@ void editorAtExit(void) {
 int editorReadKey(int fd) {
     int nread;
     char c, seq[3];
-    while ((nread = read(fd,&c,1)) == 0);
-    if (nread == -1) exit(1);
+    // while ((c = getInput(fd)) == 0);
 
-    while(1) {
+    while((c = getInput(fd))) {
         switch(c) {
         case ESC:    /* escape sequence */
             /* If this is just an ESC, we'll timeout here. */
-            if (read(fd,seq,1) == 0) return ESC;
-            if (read(fd,seq+1,1) == 0) return ESC;
+            if ((seq[0] = getInput(fd)) == 0) return ESC;
+            if ((seq[1] = getInput(fd)) == 0) return ESC;
 
             /* ESC [ sequences. */
             if (seq[0] == '[') {
                 if (seq[1] >= '0' && seq[1] <= '9') {
                     /* Extended escape, read additional byte. */
-                    if (read(fd,seq+2,1) == 0) return ESC;
+                    if ((seq[2] = getInput(fd)) == 0) return ESC;
                     if (seq[2] == '~') {
                         switch(seq[1]) {
                         case '3': return DEL_KEY;
@@ -652,15 +651,14 @@ int editorOpen(char *filename) {
         return 1;
     }
 
-    char *line = NULL;
-    size_t linecap = 0;
-    ssize_t linelen;
-    while((linelen = getline(&line,&linecap,fp)) != -1) {
+    char buf[65535];
+    char *line;
+    while((line = fgets(buf,65535,fp))) {
+        int linelen = strlen(line);
         if (linelen && (line[linelen-1] == '\n' || line[linelen-1] == '\r'))
             line[--linelen] = '\0';
         editorInsertRow(E.numrows,line,linelen);
     }
-    free(line);
     fclose(fp);
     E.dirty = 0;
     return 0;

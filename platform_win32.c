@@ -5,37 +5,88 @@
 
 void initResizeSignal() {}
 
-void disableRawMode(int fd) {}
+DWORD g_fdwSaveOldMode = 0;
+HANDLE g_hStdin;
 
-int enableRawMode(int fd) { return -1; }
+int enableRawMode(int _) {
+  g_hStdin = GetStdHandle(STD_INPUT_HANDLE);
 
-int getWindowSize(int ifd, int ofd, int *rows, int *cols) { return -1; }
+  if (!GetConsoleMode(g_hStdin, &g_fdwSaveOldMode)) {
+    // ErrorExit("GetConsoleMode");
+    return -1;
+  }
 
-// https://stackoverflow.com/questions/13112784/undefined-reference-to-getline-in-c
-ssize_t getline(char **restrict lineptr, size_t *restrict n,
-                FILE *restrict stream) {
+  DWORD fdwMode = ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT;
+  if (!SetConsoleMode(g_hStdin, fdwMode)) {
+    // ErrorExit("SetConsoleMode");
+    return -1;
+  }
 
-  register char c;
-  register char *cs = NULL;
-  register int length = 0;
-  while ((c = getc(stream)) != EOF) {
-    cs = (char *)realloc(cs, ++length + 1);
-    if ((*(cs + length - 1) = c) == '\n') {
-      *(cs + length) = '\0';
+  return 1;
+}
+
+void disableRawMode(int _) { SetConsoleMode(g_hStdin, g_fdwSaveOldMode); }
+
+int getWindowSize(int ifd, int ofd, int *rows, int *cols) {
+
+  CONSOLE_SCREEN_BUFFER_INFO csbi;
+  if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi) == 0) {
+    return -1;
+  }
+
+  *cols = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+  *rows = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+  return 0;
+}
+
+INPUT_RECORD g_irInBuf[128];
+DWORD g_cNumRead = 0;
+size_t g_current = 0;
+
+int getInput(int _) {
+  if (g_current >= g_cNumRead) {
+    g_current = 0;
+    if (!ReadConsoleInput(g_hStdin,       // input buffer handle
+                          g_irInBuf,      // buffer to read into
+                          128,            // size of read buffer
+                          &g_cNumRead)) { // number of records read
+      return 0;
+      // ErrorExit("ReadConsoleInput");
+    }
+  }
+
+  // Dispatch the events to the appropriate handler.
+  for (; g_current < g_cNumRead;) {
+    INPUT_RECORD record = g_irInBuf[g_current++];
+    switch (record.EventType) {
+    case KEY_EVENT: // keyboard input
+      // KeyEventProc(irInBuf[i].Event.KeyEvent);
+      {
+        KEY_EVENT_RECORD e = record.Event.KeyEvent;
+        if (e.bKeyDown) {
+          return e.uChar.AsciiChar;
+        }
+      }
+      break;
+
+    case MOUSE_EVENT: // mouse input
+      // MouseEventProc(irInBuf[i].Event.MouseEvent);
+      break;
+
+    case WINDOW_BUFFER_SIZE_EVENT: // scrn buf. resizing
+      // ResizeEventProc(irInBuf[i].Event.WindowBufferSizeEvent);
+      break;
+
+    case FOCUS_EVENT: // disregard focus events
+
+    case MENU_EVENT: // disregard menu events
+      break;
+
+    default:
+      // ErrorExit("Unknown event type");
       break;
     }
   }
 
-  // return the allocated memory if lineptr is null
-  if ((*lineptr) == NULL) {
-    *lineptr = cs;
-  } else {
-    // check if enough memory is allocated
-    if ((length + 1) < *n) {
-      *lineptr = (char *)realloc(*lineptr, length + 1);
-    }
-    memcpy(*lineptr, cs, length);
-    free(cs);
-  }
-  return (ssize_t)(*n = strlen(*lineptr));
+  return 0;
 }
