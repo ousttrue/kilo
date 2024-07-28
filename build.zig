@@ -29,7 +29,7 @@ pub fn build(b: *std.Build) void {
         }
     else
         [_][]const u8{
-            "repos_mod/platform_linux.c",
+            "repos/_mod/platform_linux.c",
         };
 
     exe.addCSourceFiles(.{
@@ -38,6 +38,7 @@ pub fn build(b: *std.Build) void {
         .flags = flags,
     });
     exe.linkLibC();
+    exe.addIncludePath(b.path("repos/_mod"));
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);

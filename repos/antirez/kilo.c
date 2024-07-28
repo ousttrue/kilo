@@ -38,7 +38,8 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 
-#include <termios.h>
+#include <platform.h>
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -47,7 +48,6 @@
 #include <ctype.h>
 #include <time.h>
 #include <sys/types.h>
-#include <sys/ioctl.h>
 #include <sys/time.h>
 #include <unistd.h>
 #include <stdarg.h>
@@ -77,66 +77,11 @@ struct editorSyntax {
     int flags;
 };
 
-/* This structure represents a single line of the file we are editing. */
-typedef struct erow {
-    int idx;            /* Row index in the file, zero-based. */
-    int size;           /* Size of the row, excluding the null term. */
-    int rsize;          /* Size of the rendered row. */
-    char *chars;        /* Row content. */
-    char *render;       /* Row content "rendered" for screen (for TABs). */
-    unsigned char *hl;  /* Syntax highlight type for each character in render.*/
-    int hl_oc;          /* Row had open comment at end in last syntax highlight
-                           check. */
-} erow;
-
 typedef struct hlcolor {
     int r,g,b;
 } hlcolor;
 
-struct editorConfig {
-    int cx,cy;  /* Cursor x and y position in characters */
-    int rowoff;     /* Offset of row displayed. */
-    int coloff;     /* Offset of column displayed. */
-    int screenrows; /* Number of rows that we can show */
-    int screencols; /* Number of cols that we can show */
-    int numrows;    /* Number of rows */
-    int rawmode;    /* Is terminal raw mode enabled? */
-    erow *row;      /* Rows */
-    int dirty;      /* File modified but not saved. */
-    char *filename; /* Currently open filename */
-    char statusmsg[80];
-    time_t statusmsg_time;
-    struct editorSyntax *syntax;    /* Current syntax highlight, or NULL. */
-};
-
 static struct editorConfig E;
-
-enum KEY_ACTION{
-        KEY_NULL = 0,       /* NULL */
-        CTRL_C = 3,         /* Ctrl-c */
-        CTRL_D = 4,         /* Ctrl-d */
-        CTRL_F = 6,         /* Ctrl-f */
-        CTRL_H = 8,         /* Ctrl-h */
-        TAB = 9,            /* Tab */
-        CTRL_L = 12,        /* Ctrl+l */
-        ENTER = 13,         /* Enter */
-        CTRL_Q = 17,        /* Ctrl-q */
-        CTRL_S = 19,        /* Ctrl-s */
-        CTRL_U = 21,        /* Ctrl-u */
-        ESC = 27,           /* Escape */
-        BACKSPACE =  127,   /* Backspace */
-        /* The following are just soft codes, not really reported by the
-         * terminal directly. */
-        ARROW_LEFT = 1000,
-        ARROW_RIGHT,
-        ARROW_UP,
-        ARROW_DOWN,
-        DEL_KEY,
-        HOME_KEY,
-        END_KEY,
-        PAGE_UP,
-        PAGE_DOWN
-};
 
 void editorSetStatusMessage(const char *fmt, ...);
 
@@ -199,53 +144,9 @@ struct editorSyntax HLDB[] = {
 
 /* ======================= Low level terminal handling ====================== */
 
-static struct termios orig_termios; /* In order to restore at exit.*/
-
-void disableRawMode(int fd) {
-    /* Don't even check the return value as it's too late. */
-    if (E.rawmode) {
-        tcsetattr(fd,TCSAFLUSH,&orig_termios);
-        E.rawmode = 0;
-    }
-}
-
 /* Called at exit to avoid remaining in raw mode. */
 void editorAtExit(void) {
     disableRawMode(STDIN_FILENO);
-}
-
-/* Raw mode: 1960 magic shit. */
-int enableRawMode(int fd) {
-    struct termios raw;
-
-    if (E.rawmode) return 0; /* Already enabled. */
-    if (!isatty(STDIN_FILENO)) goto fatal;
-    atexit(editorAtExit);
-    if (tcgetattr(fd,&orig_termios) == -1) goto fatal;
-
-    raw = orig_termios;  /* modify the original mode */
-    /* input modes: no break, no CR to NL, no parity check, no strip char,
-     * no start/stop output control. */
-    raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
-    /* output modes - disable post processing */
-    raw.c_oflag &= ~(OPOST);
-    /* control modes - set 8 bit chars */
-    raw.c_cflag |= (CS8);
-    /* local modes - choing off, canonical off, no extended functions,
-     * no signal chars (^Z,^C) */
-    raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
-    /* control chars - set return condition: min number of bytes and timer. */
-    raw.c_cc[VMIN] = 0; /* Return each byte, or zero for timeout. */
-    raw.c_cc[VTIME] = 1; /* 100 ms timeout (unit is tens of second). */
-
-    /* put terminal in raw mode after flushing */
-    if (tcsetattr(fd,TCSAFLUSH,&raw) < 0) goto fatal;
-    E.rawmode = 1;
-    return 0;
-
-fatal:
-    errno = ENOTTY;
-    return -1;
 }
 
 /* Read a key from the terminal put in raw mode, trying to handle
@@ -323,42 +224,6 @@ int getCursorPosition(int ifd, int ofd, int *rows, int *cols) {
     if (buf[0] != ESC || buf[1] != '[') return -1;
     if (sscanf(buf+2,"%d;%d",rows,cols) != 2) return -1;
     return 0;
-}
-
-/* Try to get the number of columns in the current terminal. If the ioctl()
- * call fails the function will try to query the terminal itself.
- * Returns 0 on success, -1 on error. */
-int getWindowSize(int ifd, int ofd, int *rows, int *cols) {
-    struct winsize ws;
-
-    if (ioctl(1, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
-        /* ioctl() failed. Try to query the terminal itself. */
-        int orig_row, orig_col, retval;
-
-        /* Get the initial position so we can restore it later. */
-        retval = getCursorPosition(ifd,ofd,&orig_row,&orig_col);
-        if (retval == -1) goto failed;
-
-        /* Go to right/bottom margin and get position. */
-        if (write(ofd,"\x1b[999C\x1b[999B",12) != 12) goto failed;
-        retval = getCursorPosition(ifd,ofd,rows,cols);
-        if (retval == -1) goto failed;
-
-        /* Restore position. */
-        char seq[32];
-        snprintf(seq,32,"\x1b[%d;%dH",orig_row,orig_col);
-        if (write(ofd,seq,strlen(seq)) == -1) {
-            /* Can't recover... */
-        }
-        return 0;
-    } else {
-        *cols = ws.ws_col;
-        *rows = ws.ws_row;
-        return 0;
-    }
-
-failed:
-    return -1;
 }
 
 /* ====================== Syntax highlight color scheme  ==================== */
@@ -813,14 +678,13 @@ int editorOpen(char *filename) {
     }
 
     char *line = NULL;
-    size_t linecap = 0;
-    ssize_t linelen;
-    while((linelen = getline(&line,&linecap,fp)) != -1) {
+    char buf[65535];
+    while((line = fgets(buf,sizeof(buf),fp))) {
+        int linelen = strlen(line);
         if (linelen && (line[linelen-1] == '\n' || line[linelen-1] == '\r'))
             line[--linelen] = '\0';
         editorInsertRow(E.numrows,line,linelen);
     }
-    free(line);
     fclose(fp);
     E.dirty = 0;
     return 0;
@@ -1267,13 +1131,6 @@ void updateWindowSize(void) {
     E.screenrows -= 2; /* Get room for status bar. */
 }
 
-void handleSigWinCh(int unused __attribute__((unused))) {
-    updateWindowSize();
-    if (E.cy > E.screenrows) E.cy = E.screenrows - 1;
-    if (E.cx > E.screencols) E.cx = E.screencols - 1;
-    editorRefreshScreen();
-}
-
 void initEditor(void) {
     E.cx = 0;
     E.cy = 0;
@@ -1285,7 +1142,7 @@ void initEditor(void) {
     E.filename = NULL;
     E.syntax = NULL;
     updateWindowSize();
-    signal(SIGWINCH, handleSigWinCh);
+    initResizeSignal();
 }
 
 int main(int argc, char **argv) {
