@@ -10,10 +10,31 @@ pub fn build(b: *std.Build) void {
         .name = "kilo",
         // .root_source_file = b.path("src/main.zig"),
     });
+
+    const flags: []const []const u8 = if (target.result.os.tag == .windows)
+        &.{
+            // for getline
+            // "-std=gnu89",
+            // "-D_GNU_SOURCE",
+        }
+    else
+        &.{};
+
+    const srcs = [_][]const u8{
+        "kilo.c",
+    };
+    const platform = if (target.result.os.tag == .windows)
+        [_][]const u8{
+            "platform_win32.c",
+        }
+    else
+        [_][]const u8{
+            "platform_linux.c",
+        };
+
     exe.addCSourceFiles(.{
-        .files = &.{
-            "kilo.c",
-        },
+        .files = &(srcs ++ platform),
+        .flags = flags,
     });
     exe.linkLibC();
     b.installArtifact(exe);

@@ -38,7 +38,6 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 
-#include <termios.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -47,12 +46,12 @@
 #include <ctype.h>
 #include <time.h>
 #include <sys/types.h>
-#include <sys/ioctl.h>
 #include <sys/time.h>
 #include <unistd.h>
 #include <stdarg.h>
 #include <fcntl.h>
 #include <signal.h>
+#include "platform.h"
 
 /* Syntax highlight types */
 #define HL_NORMAL 0
@@ -198,54 +197,9 @@ struct editorSyntax HLDB[] = {
 #define HLDB_ENTRIES (sizeof(HLDB)/sizeof(HLDB[0]))
 
 /* ======================= Low level terminal handling ====================== */
-
-static struct termios orig_termios; /* In order to restore at exit.*/
-
-void disableRawMode(int fd) {
-    /* Don't even check the return value as it's too late. */
-    if (E.rawmode) {
-        tcsetattr(fd,TCSAFLUSH,&orig_termios);
-        E.rawmode = 0;
-    }
-}
-
 /* Called at exit to avoid remaining in raw mode. */
 void editorAtExit(void) {
     disableRawMode(STDIN_FILENO);
-}
-
-/* Raw mode: 1960 magic shit. */
-int enableRawMode(int fd) {
-    struct termios raw;
-
-    if (E.rawmode) return 0; /* Already enabled. */
-    if (!isatty(STDIN_FILENO)) goto fatal;
-    atexit(editorAtExit);
-    if (tcgetattr(fd,&orig_termios) == -1) goto fatal;
-
-    raw = orig_termios;  /* modify the original mode */
-    /* input modes: no break, no CR to NL, no parity check, no strip char,
-     * no start/stop output control. */
-    raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
-    /* output modes - disable post processing */
-    raw.c_oflag &= ~(OPOST);
-    /* control modes - set 8 bit chars */
-    raw.c_cflag |= (CS8);
-    /* local modes - choing off, canonical off, no extended functions,
-     * no signal chars (^Z,^C) */
-    raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
-    /* control chars - set return condition: min number of bytes and timer. */
-    raw.c_cc[VMIN] = 0; /* Return each byte, or zero for timeout. */
-    raw.c_cc[VTIME] = 1; /* 100 ms timeout (unit is tens of second). */
-
-    /* put terminal in raw mode after flushing */
-    if (tcsetattr(fd,TCSAFLUSH,&raw) < 0) goto fatal;
-    E.rawmode = 1;
-    return 0;
-
-fatal:
-    errno = ENOTTY;
-    return -1;
 }
 
 /* Read a key from the terminal put in raw mode, trying to handle
@@ -323,42 +277,6 @@ int getCursorPosition(int ifd, int ofd, int *rows, int *cols) {
     if (buf[0] != ESC || buf[1] != '[') return -1;
     if (sscanf(buf+2,"%d;%d",rows,cols) != 2) return -1;
     return 0;
-}
-
-/* Try to get the number of columns in the current terminal. If the ioctl()
- * call fails the function will try to query the terminal itself.
- * Returns 0 on success, -1 on error. */
-int getWindowSize(int ifd, int ofd, int *rows, int *cols) {
-    struct winsize ws;
-
-    if (ioctl(1, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
-        /* ioctl() failed. Try to query the terminal itself. */
-        int orig_row, orig_col, retval;
-
-        /* Get the initial position so we can restore it later. */
-        retval = getCursorPosition(ifd,ofd,&orig_row,&orig_col);
-        if (retval == -1) goto failed;
-
-        /* Go to right/bottom margin and get position. */
-        if (write(ofd,"\x1b[999C\x1b[999B",12) != 12) goto failed;
-        retval = getCursorPosition(ifd,ofd,rows,cols);
-        if (retval == -1) goto failed;
-
-        /* Restore position. */
-        char seq[32];
-        snprintf(seq,32,"\x1b[%d;%dH",orig_row,orig_col);
-        if (write(ofd,seq,strlen(seq)) == -1) {
-            /* Can't recover... */
-        }
-        return 0;
-    } else {
-        *cols = ws.ws_col;
-        *rows = ws.ws_row;
-        return 0;
-    }
-
-failed:
-    return -1;
 }
 
 /* ====================== Syntax highlight color scheme  ==================== */
@@ -533,7 +451,8 @@ int editorSyntaxToColor(int hl) {
 /* Select the syntax highlight scheme depending on the filename,
  * setting it in the global state E.syntax. */
 void editorSelectSyntaxHighlight(char *filename) {
-    for (unsigned int j = 0; j < HLDB_ENTRIES; j++) {
+    unsigned int j;
+    for (j = 0; j < HLDB_ENTRIES; j++) {
         struct editorSyntax *s = HLDB+j;
         unsigned int i = 0;
         while(s->filematch[i]) {
@@ -594,7 +513,8 @@ void editorInsertRow(int at, char *s, size_t len) {
     E.row = realloc(E.row,sizeof(erow)*(E.numrows+1));
     if (at != E.numrows) {
         memmove(E.row+at+1,E.row+at,sizeof(E.row[0])*(E.numrows-at));
-        for (int j = at+1; j <= E.numrows; j++) E.row[j].idx++;
+        int j;
+        for (j = at+1; j <= E.numrows; j++) E.row[j].idx++;
     }
     E.row[at].size = len;
     E.row[at].chars = malloc(len+1);
@@ -625,7 +545,8 @@ void editorDelRow(int at) {
     row = E.row+at;
     editorFreeRow(row);
     memmove(E.row+at,E.row+at+1,sizeof(E.row[0])*(E.numrows-at-1));
-    for (int j = at; j < E.numrows-1; j++) E.row[j].idx++;
+    int j;
+    for (j = at; j < E.numrows-1; j++) E.row[j].idx++;
     E.numrows--;
     E.dirty++;
 }
@@ -1285,7 +1206,7 @@ void initEditor(void) {
     E.filename = NULL;
     E.syntax = NULL;
     updateWindowSize();
-    signal(SIGWINCH, handleSigWinCh);
+    initResizeSignal();
 }
 
 int main(int argc, char **argv) {

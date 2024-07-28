@@ -1,9 +1,11 @@
+zig の練習に
+
 [kilo](https://github.com/antirez/kilo)
 
 を改造して遊ぶ。
 
-- [ ] build.zig
-- [ ] windows 兼用
+- [x] build.zig
+- [ ] [windows 兼用](./windows)
 - [ ] zig 化
 
 markdown のメモ書き用に実用できないか？
