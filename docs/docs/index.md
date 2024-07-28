@@ -5,12 +5,13 @@ zig の練習に
 を改造して遊ぶ。
 
 - [x] build.zig
-- [ ] [windows 兼用](./windows)
+- [x] [windows 兼用](./windows)
+    - [ ] keycode の非互換
+- [ ] vim 風 keybinding
 - [ ] zig 化
 
 markdown のメモ書き用に実用できないか？
 
-- [ ] vim 風 keybinding
 - [ ] skk
     - [ ] 四角号碼
 - [ ] lsp (jump / syntax highlight / symbol list / diagnostics)
