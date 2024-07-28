@@ -1,6 +1,14 @@
 #include "platform.h"
 #include <sys/ioctl.h>
 #include <termios.h>
+#include <errno.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+
+extern struct editorConfig E;
 
 static struct termios orig_termios; /* In order to restore at exit.*/
 
@@ -52,6 +60,30 @@ int enableRawMode(int fd) {
 fatal:
   errno = ENOTTY;
   return -1;
+}
+
+/* Use the ESC [6n escape sequence to query the horizontal cursor position
+ * and return it. On error -1 is returned, on success the position of the
+ * cursor is stored at *rows and *cols and 0 is returned. */
+int getCursorPosition(int ifd, int ofd, int *rows, int *cols) {
+    char buf[32];
+    unsigned int i = 0;
+
+    /* Report cursor location */
+    if (write(ofd, "\x1b[6n", 4) != 4) return -1;
+
+    /* Read the response: ESC [ rows ; cols R */
+    while (i < sizeof(buf)-1) {
+        if (read(ifd,buf+i,1) != 1) break;
+        if (buf[i] == 'R') break;
+        i++;
+    }
+    buf[i] = '\0';
+
+    /* Parse it. */
+    if (buf[0] != ESC || buf[1] != '[') return -1;
+    if (sscanf(buf+2,"%d;%d",rows,cols) != 2) return -1;
+    return 0;
 }
 
 /* Try to get the number of columns in the current terminal. If the ioctl()
