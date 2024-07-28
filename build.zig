@@ -21,7 +21,7 @@ pub fn build(b: *std.Build) void {
         &.{};
 
     const srcs = [_][]const u8{
-        "repos/antirez/kilo.c",
+        "repos/taidanh/kilo.c",
     };
     const platform = if (target.result.os.tag == .windows)
         [_][]const u8{
