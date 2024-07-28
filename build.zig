@@ -21,18 +21,19 @@ pub fn build(b: *std.Build) void {
         &.{};
 
     const srcs = [_][]const u8{
-        "kilo.c",
+        "repos/antirez/kilo.c",
     };
     const platform = if (target.result.os.tag == .windows)
         [_][]const u8{
-            "platform_win32.c",
+            "repos/_mod/platform_win32.c",
         }
     else
         [_][]const u8{
-            "platform_linux.c",
+            "repos_mod/platform_linux.c",
         };
 
     exe.addCSourceFiles(.{
+        // .root = b.path("kilo"),
         .files = &(srcs ++ platform),
         .flags = flags,
     });

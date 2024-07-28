@@ -7,7 +7,7 @@ zig の練習に
 - [x] build.zig
 - [x] [windows 兼用](./windows)
     - [ ] keycode の非互換
-- [ ] vim 風 keybinding
+- [ ] [vim 風](./vimlike)
 - [ ] zig 化
 
 markdown のメモ書き用に実用できないか？
