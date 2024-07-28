@@ -120,3 +120,12 @@ int getWindowSize(int ifd, int ofd, int *rows, int *cols) {
 failed:
     return -1;
 }
+
+int getInput(int fd) {
+  unsigned char c;
+  int res = read(fd, &c, 1);
+  if(res<=0){
+    return 0;
+  }
+  return c;
+}

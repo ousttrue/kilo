@@ -146,7 +146,7 @@ void editorAtExit(void) {
 /* Read a key from the terminal put in raw mode, trying to handle
  * escape sequences. */
 int editorReadKey(int fd) {
-    int nread;
+    // int nread;
     char c, seq[3];
     // while ((c = getInput(fd)) == 0);
 
