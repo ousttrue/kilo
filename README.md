@@ -29,3 +29,4 @@ under the BSD 2 clause license.
 ## mod
 
 - [x] windows input (conpty ?)
+- [x] build.zig

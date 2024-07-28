@@ -2,3 +2,6 @@ kilo
 
 /builddir/
 /prefix/
+
+/.zig-cache/
+/zig-out/
