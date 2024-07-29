@@ -43,6 +43,7 @@ typedef struct erow {
     unsigned char *hl;  /* Syntax highlight type for each character in render.*/
     int hl_oc;          /* Row had open comment at end in last syntax highlight
                            check. */
+    int hl_open_comment;
 } erow;
 
 struct editorConfig {
@@ -55,6 +56,8 @@ struct editorConfig {
     int rawmode;    /* Is terminal raw mode enabled? */
     erow *row;      /* Rows */
     int dirty;      /* File modified but not saved. */
+    int mode;
+    int rx;
     char *filename; /* Currently open filename */
     char statusmsg[80];
     time_t statusmsg_time;

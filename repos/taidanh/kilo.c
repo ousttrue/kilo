@@ -6,6 +6,8 @@
 #define _BSD_SOURCE
 #define _GNU_SOURCE
 
+#include <platform.h>
+
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -13,9 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
 #include <sys/types.h>
-#include <termios.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -28,19 +28,6 @@
 #define KILO_QUIT_TIMES 3
 
 #define CTRL_KEY(k) ((k) & 0x1f)
-
-enum editorKey {
-    BACKSPACE = 127,
-    ARROW_LEFT = 1000,
-    ARROW_RIGHT,
-    ARROW_UP,
-    ARROW_DOWN,
-    DEL_KEY,
-    HOME_KEY,
-    END_KEY,
-    PAGE_UP,
-    PAGE_DOWN
-};
 
 enum editorHighlight {
     HL_NORMAL = 0,
@@ -73,34 +60,6 @@ struct editorSyntax {
     char *multiline_comment_start;
     char *multiline_comment_end;
     int flags;
-};
-
-typedef struct erow {
-    int idx;
-    int size;
-    int rsize;
-    char *chars;
-    char *render;
-    unsigned char *hl;
-    int hl_open_comment;
-} erow;
-
-struct editorConfig {
-    char *filename;
-    char statusmsg[80];
-    erow *row;
-    int coloff;
-    int cx, cy;
-    int dirty;
-    int mode;
-    int numrows;
-    int rowoff;
-    int rx;
-    int screencols;
-    int screenrows;
-    time_t statusmsg_time;
-    struct editorSyntax *syntax;
-    struct termios orig_termios;
 };
 
 struct editorConfig E;
@@ -149,29 +108,6 @@ void die(const char *s) {
 
     perror(s);
     exit(1);
-}
-
-void disableRawMode() {
-    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_termios) == -1) {
-        die("tcsetattr");
-    }
-}
-
-void enableRawMode() {
-    if (tcgetattr(STDIN_FILENO, &E.orig_termios) == -1) die("tcgetattr");
-    atexit(disableRawMode);
-
-    struct termios raw = E.orig_termios;
-    raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
-    raw.c_oflag &= ~(OPOST);
-    raw.c_cflag |= (CS8);
-    raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
-    raw.c_cc[VMIN] = 0;
-    raw.c_cc[VTIME] = 1;
-
-    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) {
-        die("tcsetattr");
-    }
 }
 
 int editorReadKey() {
@@ -241,20 +177,6 @@ int getCursorPosition(int *rows, int *cols) {
       if (sscanf(&buf[2], "%d;%d", rows, cols) != 2) return -1;
 
       return 0;
-}
-
-int getWindowSize(int *rows, int *cols) {
-    struct winsize ws;
-
-    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
-        if (write(STDOUT_FILENO, "\x1b[999C\x1b[999B", 12) != 12) return -1;
-        // ^ backup in case ioctl fails
-        return getCursorPosition(rows, cols);
-    } else {
-        *cols = ws.ws_col;
-        *rows = ws.ws_row;
-        return 0;
-    }
 }
 
 /*************************\
@@ -617,9 +539,9 @@ void editorOpen(char *filename) {
     if (!fp) die("fopen");
 
     char *line = NULL;
-    size_t linecap = 0;
-    ssize_t linelen;
-    while ((linelen = getline(&line, &linecap, fp)) != -1) {
+    char buf[65535];
+    while ((line = fgets(buf, sizeof(buf), fp))) {
+        int linelen = strlen(line);
         while (linelen > 0 && (line[linelen - 1] == '\n' ||
                                line[linelen - 1] == '\r'))
             linelen--;
@@ -1299,12 +1221,12 @@ void initEditor() {
     E.syntax = NULL;
     E.mode = 1;
 
-    if (getWindowSize(&E.screenrows, &E.screencols) == -1) die("getWindowSize");
+    if (getWindowSize(0, 0, &E.screenrows, &E.screencols) == -1) die("getWindowSize");
     E.screenrows -= 2;
 }
 
 int main(int argc, char *argv[]) {
-    enableRawMode();
+    enableRawMode(0);
     initEditor();
     if (argc >= 2) {
         editorOpen(argv[1]);

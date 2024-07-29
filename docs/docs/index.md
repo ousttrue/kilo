@@ -4,6 +4,8 @@ zig の練習に
 
 を改造して遊ぶ。
 
+[Build Your Own Text Editor](https://viewsourcecode.org/snaptoken/kilo/index.html)
+
 - [x] build.zig
 - [x] [windows 兼用](./windows)
     - [ ] keycode の非互換
