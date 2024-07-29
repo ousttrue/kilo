@@ -1,8 +1,8 @@
 # vim 風の操作
 
-## impls
+## kilo-impls
 
-vim 風バインディングを実践しているリポジトリ。
+kilo の vim 風バインディングを実践しているリポジトリ。
 
 https://github.com/search?q=vim%20kilo&type=repositories
 
@@ -28,3 +28,28 @@ zig 実装。
 zig 実装。
 `0.12.0` くらいか？
 `0.13.0` ではビルドが通せなかった。
+
+## vi-impls
+
+https://vim.reversed.top/
+
+### vis
+
+- https://github.com/martanne/vis
+
+WSL でビルド、動作できた。
+
+- libtermkey
+
+### ex-vi
+
+- https://github.com/n-t-roff/heirloom-ex-vi
+
+WSL でビルド、動作できた。
+
+### elvis
+
+- https://github.com/mbert/elvis
+
+Windows でビルド一回できたのだが、
+その後できなくなってしまった。
