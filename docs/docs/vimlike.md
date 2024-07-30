@@ -4,7 +4,7 @@
 
 kilo の vim 風バインディングを実践しているリポジトリ。
 
-https://github.com/search?q=vim%20kilo&type=repositories
+- https://github.com/search?q=vim%20kilo&type=repositories
 
 ### taidanh
 
@@ -31,7 +31,34 @@ zig 実装。
 
 ## vi-impls
 
-https://vim.reversed.top/
+vi 風 text editor
+
+- https://vim.reversed.top/
+- https://github.com/search?q=vi+text+editor+language%3AC&type=repositories&l=C
+
+### svi
+
+- https://github.com/byllgrim/svi
+
+WSL でビルド、動作できた。
+
+### viless
+
+- https://github.com/brentr/viless[
+
+WSL でビルド、動作できた。
+
+### neatvi
+
+- https://github.com/aligrudi/neatvi
+
+`small !`
+
+WSL でビルド、動作できた。
+
+#### 派生
+
+- https://github.com/kyx0r/nextvi
 
 ### vis
 
@@ -41,15 +68,23 @@ WSL でビルド、動作できた。
 
 - libtermkey
 
-### ex-vi
-
-- https://github.com/n-t-roff/heirloom-ex-vi
-
-WSL でビルド、動作できた。
-
 ### elvis
 
 - https://github.com/mbert/elvis
 
 Windows でビルド一回できたのだが、
 その後できなくなってしまった。
+
+## ex vi port
+
+### ex-vi
+
+- https://github.com/n-t-roff/heirloom-ex-vi
+
+WSL でビルド、動作できた。
+
+### sctb-ex
+
+- https://github.com/traditional-vi/sctb-ex
+
+WSL でビルド、動作できた。
