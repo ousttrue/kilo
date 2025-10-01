@@ -7,7 +7,7 @@ pub fn build(b: *std.Build) void {
     const mod = b.addModule("kilo", .{
         .target = target,
         .optimize = optimize,
-        // .root_source_file = b.path("src/main.zig"),
+        .root_source_file = b.path("main.zig"),
     });
 
     const exe = b.addExecutable(.{
@@ -43,6 +43,7 @@ pub fn build(b: *std.Build) void {
     });
     exe.linkLibC();
     exe.addIncludePath(b.path("repos/_mod"));
+    exe.addIncludePath(b.path("repos/taidanh"));
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
