@@ -25,11 +25,9 @@ struct editorConfig {
     struct editorSyntax *syntax; /* Current syntax highlight, or NULL. */
 };
 
-extern struct editorConfig E;
-
-void initEditor();
-void editorOpen(char *filename);
-void editorSetStatusMessage(const char *fmt, ...);
-void editorRefreshScreen();
-void editorNormalProcessKeypress();
-void editorProcessKeypress();
+void initEditor(struct editorConfig *E);
+void editorOpen(struct editorConfig *E, char *filename);
+void editorSetStatusMessage(struct editorConfig *E, const char *fmt, ...);
+void editorRefreshScreen(struct editorConfig *E);
+void editorNormalProcessKeypress(struct editorConfig *E);
+void editorProcessKeypress(struct editorConfig *E);

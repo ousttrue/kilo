@@ -6,19 +6,22 @@ const c = @cImport({
 
 pub fn main() void {
     _ = c.enableRawMode(0);
-    c.initEditor();
+
+    var E = c.editorConfig{};
+
+    c.initEditor(&E);
     if (std.os.argv.len >= 2) {
-        c.editorOpen(std.os.argv[1]);
+        c.editorOpen(&E, std.os.argv[1]);
     }
 
-    c.editorSetStatusMessage("HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find");
+    c.editorSetStatusMessage(&E, "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find");
 
     while (true) {
-        c.editorRefreshScreen();
-        if (c.E.mode == c.MODE_NORMAL) {
-            c.editorNormalProcessKeypress();
+        c.editorRefreshScreen(&E);
+        if (E.mode == c.MODE_NORMAL) {
+            c.editorNormalProcessKeypress(&E);
         } else {
-            c.editorProcessKeypress();
+            c.editorProcessKeypress(&E);
         }
     }
 }
