@@ -1,0 +1,4 @@
+SortIncludes: false
+BasedOnStyle: WebKit
+PointerAlignment: Right
+BreakBeforeBraces: Attach
