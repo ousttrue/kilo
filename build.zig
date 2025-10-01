@@ -4,11 +4,15 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const exe = b.addExecutable(.{
+    const mod = b.addModule("kilo", .{
         .target = target,
         .optimize = optimize,
-        .name = "kilo",
         // .root_source_file = b.path("src/main.zig"),
+    });
+
+    const exe = b.addExecutable(.{
+        .name = "kilo",
+        .root_module = mod,
     });
 
     const flags: []const []const u8 = if (target.result.os.tag == .windows)
@@ -50,9 +54,7 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
 
     const exe_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = mod,
     });
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
     const test_step = b.step("test", "Run unit tests");
